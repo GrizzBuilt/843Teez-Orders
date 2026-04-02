@@ -1,0 +1,195 @@
+<!--
+  File: public/index.html
+  Project: 843Teez Orders
+  Purpose: Main production board UI
+  Notes:
+  - Displays job columns for the shop workflow
+  - Controlled by public/app.js
+-->
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>843 Teez Orders</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>843 Teez Orders</h1>
+        <p class="subtitle">Shop order flow</p>
+      </div>
+
+      <div class="topbar-actions">
+        <label class="toggle">
+          <input type="checkbox" id="show-complete-toggle" />
+          <span>Show Complete</span>
+        </label>
+
+        <button class="add-btn" type="button" id="new-order-btn">
+          + New Order
+        </button>
+      </div>
+    </header>
+
+    <main class="board">
+      <section class="column" data-status="in_the_hole">
+        <div class="column-header">
+          <h2>In the Hole</h2>
+          <span class="count">0</span>
+        </div>
+        <div class="card-list"></div>
+      </section>
+
+      <section class="column" data-status="on_deck">
+        <div class="column-header">
+          <h2>On Deck</h2>
+          <span class="count">0</span>
+        </div>
+        <div class="card-list"></div>
+      </section>
+
+      <section class="column" data-status="at_the_plate">
+        <div class="column-header">
+          <h2>At the Plate</h2>
+          <span class="count">0</span>
+        </div>
+        <div class="card-list"></div>
+      </section>
+
+      <section class="column" data-status="ready">
+        <div class="column-header">
+          <h2>Ready</h2>
+          <span class="count">0</span>
+        </div>
+        <div class="card-list"></div>
+      </section>
+
+      <section class="column" data-status="complete" id="complete-column" hidden>
+        <div class="column-header">
+          <h2>Complete</h2>
+          <span class="count">0</span>
+        </div>
+        <div class="card-list"></div>
+      </section>
+    </main>
+
+    <!-- =====================
+         New Job Modal
+         Purpose:
+         - Opens from the + New Order button
+         - Creates a new production job
+    ====================== -->
+    <div class="modal-backdrop hidden" id="job-modal-backdrop">
+      <div
+        class="modal"
+        id="job-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-job-title"
+      >
+        <div class="modal-header">
+          <h2 id="new-job-title">New Job</h2>
+          <button type="button" class="icon-btn" id="close-modal-btn" aria-label="Close">
+            ×
+          </button>
+        </div>
+
+        <form id="new-job-form" class="job-form" novalidate>
+          <div class="form-grid">
+            <div class="form-field">
+              <label for="order_number">Order #</label>
+              <input type="text" id="order_number" name="order_number" required />
+            </div>
+
+            <div class="form-field">
+              <label for="customer_name">Customer Name</label>
+              <input type="text" id="customer_name" name="customer_name" required />
+            </div>
+
+            <div class="form-field form-field-full">
+              <label for="items_summary">Items Summary</label>
+              <input
+                type="text"
+                id="items_summary"
+                name="items_summary"
+                placeholder="Example: 5 sand tees / 2 black hoodies"
+              />
+            </div>
+
+            <div class="form-field">
+              <label for="quantity">Qty</label>
+              <input
+                type="number"
+                id="quantity"
+                name="quantity"
+                min="1"
+                step="1"
+                inputmode="numeric"
+                value="1"
+              />
+            </div>
+
+            <div class="form-field">
+              <label for="print_type">Print Type</label>
+              <select id="print_type" name="print_type">
+                <option value="">Select one</option>
+                <option value="DTF">DTF</option>
+                <option value="Screen Print">Screen Print</option>
+              </select>
+            </div>
+
+            <div class="form-field">
+              <label for="status">Starting Column</label>
+              <select id="status" name="status">
+                <option value="in_the_hole">In the Hole</option>
+                <option value="on_deck">On Deck</option>
+                <option value="at_the_plate">At the Plate</option>
+                <option value="ready">Ready</option>
+              </select>
+            </div>
+
+            <div class="form-field">
+              <label for="dtf_source">DTF Source</label>
+              <select id="dtf_source" name="dtf_source">
+                <option value="">None / N/A</option>
+                <option value="in_house">In House</option>
+                <option value="armour_ink">Armour Ink</option>
+              </select>
+            </div>
+
+            <div class="form-field form-field-full">
+              <label for="notes">Notes</label>
+              <textarea
+                id="notes"
+                name="notes"
+                rows="3"
+                placeholder="Anything helpful for the board..."
+              ></textarea>
+            </div>
+          </div>
+
+          <div class="checkbox-group">
+            <label><input type="checkbox" name="blanks_ordered" /> Blanks Ordered</label>
+            <label><input type="checkbox" name="blanks_received" /> Blanks Received</label>
+            <label><input type="checkbox" name="dtf_ready" /> DTF Ready</label>
+            <label><input type="checkbox" name="screens_made" /> Screens Made</label>
+            <label><input type="checkbox" name="ink_on_hand" /> Ink On Hand</label>
+            <label><input type="checkbox" name="ink_ordered" /> Ink Ordered</label>
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="secondary-btn" id="cancel-modal-btn">
+              Cancel
+            </button>
+            <button type="button" class="add-btn" id="save-job-btn">Save Job</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

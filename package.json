@@ -1,0 +1,25 @@
+{
+  "name": "843teez-orders",
+  "version": "1.0.0",
+  "description": "843 Teez Order Tracking MVP",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GrizzBuilt/843Teez-Orders.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/GrizzBuilt/843Teez-Orders/issues"
+  },
+  "homepage": "https://github.com/GrizzBuilt/843Teez-Orders#readme",
+  "dependencies": {
+    "express": "^5.2.1",
+    "sqlite3": "^6.0.1"
+  }
+}
