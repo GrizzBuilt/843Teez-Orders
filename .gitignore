@@ -1,0 +1,13 @@
+node_modules/
+.env
+.DS_Store
+
+# Live SQLite database
+db/orders.db
+
+# SQLite temporary files
+*.db-wal
+*.db-shm
+
+# Local database backups
+backups/
