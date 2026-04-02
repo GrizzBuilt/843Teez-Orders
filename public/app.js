@@ -82,6 +82,15 @@ function validateNewJobForm() {
   }
 }
 
+function formatPrintType(printType) {
+  if (!printType) return "";
+  return printType;
+}
+
+function buildMetaPill(label, value) {
+  return `<span class="meta-pill">${escapeHtml(label)}: ${escapeHtml(value)}</span>`;
+}
+
 // =====================
 // Card Flag Builder
 // =====================
@@ -207,6 +216,7 @@ function createDtfSourceToggle(job, onChange) {
 function createJobCard(job) {
   const article = document.createElement("article");
   article.className = "order-card";
+  article.dataset.status = job.status;
 
   const flags = getFlags(job);
   const printBadgeClass =
@@ -216,28 +226,51 @@ function createJobCard(job) {
   const canMoveLeft = currentIndex > 0;
   const canMoveRight = currentIndex >= 0 && currentIndex < STATUSES.length - 1;
 
+  const qtyPill = buildMetaPill("Qty", job.quantity || 0);
+  const printTypePill = job.print_type
+    ? buildMetaPill("Type", formatPrintType(job.print_type))
+    : "";
+
   article.innerHTML = `
     <div class="card-top">
       <strong>#${escapeHtml(job.order_number)}</strong>
-      <span class="${printBadgeClass}">${escapeHtml(job.print_type || "")}</span>
+      ${
+        job.print_type
+          ? `<span class="${printBadgeClass}">${escapeHtml(job.print_type)}</span>`
+          : ""
+      }
     </div>
     <h3>${escapeHtml(job.customer_name)}</h3>
-    <p>${escapeHtml(job.items_summary || "")}</p>
-    <p>Qty: ${escapeHtml(job.quantity || 0)}</p>
-    ${job.notes ? `<p class="notes">${escapeHtml(job.notes)}</p>` : ""}
-    <div class="flags">
-      ${flags.map((flag) => `<span class="flag">${escapeHtml(flag)}</span>`).join("")}
+    <p class="card-items">${escapeHtml(job.items_summary || "")}</p>
+    <div class="card-meta">
+      ${qtyPill}
+      ${printTypePill}
     </div>
-    <div class="flag-toggles"></div>
+    ${job.notes ? `<p class="notes">${escapeHtml(job.notes)}</p>` : ""}
+    ${
+      flags.length
+        ? `<div class="flags">
+            ${flags.map((flag) => `<span class="flag">${escapeHtml(flag)}</span>`).join("")}
+          </div>`
+        : ""
+    }
+    <button type="button" class="toggle-flags-btn">Details</button>
+    <div class="flag-toggles hidden"></div>
     <div class="card-actions">
       <button type="button" class="move-left" ${!canMoveLeft ? "disabled" : ""}>←</button>
       <button type="button" class="move-right" ${!canMoveRight ? "disabled" : ""}>→</button>
     </div>
   `;
 
+  const toggleBtn = article.querySelector(".toggle-flags-btn");
   const flagTogglesEl = article.querySelector(".flag-toggles");
   const moveLeftBtn = article.querySelector(".move-left");
   const moveRightBtn = article.querySelector(".move-right");
+
+  toggleBtn.addEventListener("click", () => {
+    const isHidden = flagTogglesEl.classList.toggle("hidden");
+    toggleBtn.textContent = isHidden ? "Details" : "Hide Details";
+  });
 
   async function handleFlagUpdate(payload) {
     try {
