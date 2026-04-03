@@ -373,7 +373,7 @@ app.post("/api/jobs", (req, res) => {
 // - Does NOT auto-move backward when flags are unchecked
 // - Updates completed_at if status changes to/from complete
 // =====================
-app.patch("/api/jobs/:id", (req, res) => {
+app.patch("/api/jobs/:id", (req, res) => {  
   const jobId = req.params.id;
 
   db.get(`SELECT * FROM jobs WHERE id = ?`, [jobId], (loadErr, existingJob) => {
