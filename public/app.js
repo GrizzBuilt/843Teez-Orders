@@ -3,11 +3,15 @@
  * Project: 843Teez Orders
  * Purpose: Frontend logic for loading jobs, rendering the board, and handling status movement
  * Notes:
- * - Pulls jobs from the API
- * - Renders cards into the correct workflow column
- * - Handles left/right status movement
- * - Handles creating new jobs from the modal form
- * - Handles toggling production flags directly on cards
+ * - Ultra-compact cards
+ * - Expandable details
+ * - Tiny quick-move arrows always visible
+ * - Aging indicator uses business days + quantity/workflow logic
+ * - Ready and Complete jobs do not age visually
+ * - Aging badge is color-coded
+ * - Stuck job detection added
+ * - Quick flags added to compact card
+ * - Mobile + tablet + desktop friendly
  */
 
 // =====================
@@ -20,6 +24,183 @@ const STATUSES = [
   "ready",
   "complete",
 ];
+
+// =====================
+// Aging Logic
+// Purpose:
+// - Use business days instead of hours
+// - Base expectations on quantity + workflow
+// - Warning = at expected turnaround
+// - Danger = 2+ business days past expected
+// - Ready / Complete do not age visually
+// =====================
+const AGING_DANGER_BUFFER_DAYS = 2;
+
+// =====================
+// Stuck Job Logic
+// Purpose:
+// - Detect jobs sitting too long in a specific stage
+// - Uses business days
+// =====================
+const STUCK_STAGE_THRESHOLDS = {
+  in_the_hole: 4,
+  on_deck: 3,
+  at_the_plate: 2,
+  ready: null,
+  complete: null,
+};
+
+function startOfDay(date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function getBusinessDaysBetween(startDateInput, endDateInput = new Date()) {
+  const start = new Date(startDateInput);
+  const end = new Date(endDateInput);
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return null;
+  }
+
+  const current = startOfDay(start);
+  const endDay = startOfDay(end);
+
+  if (current >= endDay) {
+    return 0;
+  }
+
+  let businessDays = 0;
+
+  while (current < endDay) {
+    const day = current.getDay();
+
+    if (day !== 0 && day !== 6) {
+      businessDays += 1;
+    }
+
+    current.setDate(current.getDate() + 1);
+  }
+
+  return businessDays;
+}
+
+function getProductionDaysByQuantity(quantity) {
+  const qty = Number(quantity) || 1;
+
+  if (qty <= 10) return 1;
+  if (qty <= 24) return 2;
+  if (qty <= 60) return 3;
+  if (qty <= 100) return 4;
+  return 5;
+}
+
+function getExpectedBusinessDays(job) {
+  const qty = Number(job.quantity) || 1;
+  let days = 0;
+
+  if (!job.blanks_received) {
+    if (job.blanks_ordered) {
+      days += 4;
+    } else {
+      days += 2;
+    }
+  }
+
+  if (job.print_type === "DTF") {
+    const useArmourInk =
+      job.dtf_source === "armour_ink" ||
+      (!job.dtf_source && qty >= 10);
+
+    const useInHouse =
+      job.dtf_source === "in_house" ||
+      (!job.dtf_source && qty < 10);
+
+    if (!job.dtf_ready) {
+      if (useArmourInk) {
+        days += 5;
+      } else if (useInHouse) {
+        days += qty <= 10 ? 2 : 3;
+      }
+    }
+  }
+
+  if (job.print_type === "Screen Print") {
+    days += 2;
+  }
+
+  days += getProductionDaysByQuantity(qty);
+
+  return Math.max(days, 1);
+}
+
+function getElapsedBusinessDays(job) {
+  if (!job?.created_at) return null;
+  return getBusinessDaysBetween(job.created_at, new Date());
+}
+
+function isAgingTrackedStatus(status) {
+  return status !== "ready" && status !== "complete";
+}
+
+function getAgingLevel(job) {
+  if (!isAgingTrackedStatus(job.status)) return "";
+
+  const elapsedDays = getElapsedBusinessDays(job);
+  if (elapsedDays == null) return "";
+
+  const expectedDays = getExpectedBusinessDays(job);
+
+  if (elapsedDays >= expectedDays + AGING_DANGER_BUFFER_DAYS) {
+    return "aging-danger";
+  }
+
+  if (elapsedDays >= expectedDays) {
+    return "aging-warning";
+  }
+
+  return "aging-normal";
+}
+
+function getAgeLabel(job) {
+  if (!isAgingTrackedStatus(job.status)) return "";
+
+  const elapsedDays = getElapsedBusinessDays(job);
+  if (elapsedDays == null) return "";
+
+  const expectedDays = getExpectedBusinessDays(job);
+
+  return `${elapsedDays}/${expectedDays}d`;
+}
+
+function getStuckLevel(job) {
+  const threshold = STUCK_STAGE_THRESHOLDS[job.status];
+
+  if (!threshold) return "";
+
+  const elapsedDays = getElapsedBusinessDays(job);
+  if (elapsedDays == null) return "";
+
+  if (elapsedDays >= threshold) {
+    return "stuck";
+  }
+
+  return "";
+}
+
+function getStuckLabel(job) {
+  const threshold = STUCK_STAGE_THRESHOLDS[job.status];
+
+  if (!threshold) return "";
+
+  const elapsedDays = getElapsedBusinessDays(job);
+  if (elapsedDays == null) return "";
+
+  if (elapsedDays >= threshold) {
+    return "Stuck";
+  }
+
+  return "";
+}
 
 // =====================
 // DOM Elements
@@ -82,17 +263,28 @@ function validateNewJobForm() {
   }
 }
 
+function buildMetaPill(label, value) {
+  return `<span class="meta-pill">${escapeHtml(label)}: ${escapeHtml(value)}</span>`;
+}
+
+function scrollToColumn(status) {
+  const column = document.querySelector(`.column[data-status="${status}"]`);
+  if (!column) return;
+
+  column.scrollIntoView({
+    behavior: "smooth",
+    inline: "center",
+    block: "nearest",
+  });
+}
+
 function formatPrintType(printType) {
   if (!printType) return "";
   return printType;
 }
 
-function buildMetaPill(label, value) {
-  return `<span class="meta-pill">${escapeHtml(label)}: ${escapeHtml(value)}</span>`;
-}
-
 // =====================
-// Card Flag Builder
+// Flag Builder
 // =====================
 function getFlags(job) {
   const flags = [];
@@ -113,6 +305,46 @@ function getFlags(job) {
   }
 
   return flags;
+}
+
+function getQuickFlags(job) {
+  const quickFlags = [];
+
+  quickFlags.push({
+    key: "blanks_ordered",
+    label: "Ordered",
+    active: Boolean(job.blanks_ordered),
+  });
+
+  quickFlags.push({
+    key: "blanks_received",
+    label: "Received",
+    active: Boolean(job.blanks_received),
+  });
+
+  if (job.print_type === "DTF") {
+    quickFlags.push({
+      key: "dtf_ready",
+      label: "DTF Ready",
+      active: Boolean(job.dtf_ready),
+    });
+  }
+
+  if (job.print_type === "Screen Print") {
+    quickFlags.push({
+      key: "screens_made",
+      label: "Screens",
+      active: Boolean(job.screens_made),
+    });
+
+    quickFlags.push({
+      key: "ink_on_hand",
+      label: "Ink",
+      active: Boolean(job.ink_on_hand),
+    });
+  }
+
+  return quickFlags;
 }
 
 // =====================
@@ -137,9 +369,7 @@ async function parseApiResponse(response, fallbackMessage) {
 async function updateJobStatus(jobId, newStatus) {
   const response = await fetch(`/api/jobs/${jobId}/status`, {
     method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ status: newStatus }),
   });
 
@@ -149,9 +379,7 @@ async function updateJobStatus(jobId, newStatus) {
 async function createJob(payload) {
   const response = await fetch("/api/jobs", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
 
@@ -161,9 +389,7 @@ async function createJob(payload) {
 async function updateJobFlags(jobId, payload) {
   const response = await fetch(`/api/jobs/${jobId}/flags`, {
     method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
 
@@ -173,58 +399,29 @@ async function updateJobFlags(jobId, payload) {
 // =====================
 // UI Rendering
 // =====================
-function createCheckboxToggle(labelText, checked, onChange) {
-  const label = document.createElement("label");
-  label.className = "flag-toggle";
-
-  const input = document.createElement("input");
-  input.type = "checkbox";
-  input.checked = Boolean(checked);
-  input.addEventListener("change", () => onChange(input.checked));
-
-  const text = document.createElement("span");
-  text.textContent = labelText;
-
-  label.appendChild(input);
-  label.appendChild(text);
-
-  return label;
-}
-
-function createDtfSourceToggle(job, onChange) {
-  const label = document.createElement("label");
-  label.className = "flag-toggle";
-
-  const text = document.createElement("span");
-  text.textContent = "DTF Source";
-
-  const select = document.createElement("select");
-  select.innerHTML = `
-    <option value="">None / N/A</option>
-    <option value="in_house">In House</option>
-    <option value="armour_ink">Armour Ink</option>
-  `;
-  select.value = job.dtf_source || "";
-  select.addEventListener("change", () => onChange(select.value));
-
-  label.appendChild(text);
-  label.appendChild(select);
-
-  return label;
-}
-
 function createJobCard(job) {
   const article = document.createElement("article");
   article.className = "order-card";
   article.dataset.status = job.status;
 
-  const flags = getFlags(job);
-  const printBadgeClass =
-    job.print_type === "Screen Print" ? "badge screen" : "badge";
+  const agingLevel = getAgingLevel(job);
+  const ageLabel = getAgeLabel(job);
+  const stuckLevel = getStuckLevel(job);
+  const stuckLabel = getStuckLabel(job);
 
+  if (agingLevel) {
+    article.classList.add(agingLevel);
+  }
+
+  if (stuckLevel) {
+    article.classList.add(stuckLevel);
+  }
+
+  const flags = getFlags(job);
+  const quickFlags = getQuickFlags(job);
   const currentIndex = STATUSES.indexOf(job.status);
   const canMoveLeft = currentIndex > 0;
-  const canMoveRight = currentIndex >= 0 && currentIndex < STATUSES.length - 1;
+  const canMoveRight = currentIndex < STATUSES.length - 1;
 
   const qtyPill = buildMetaPill("Qty", job.quantity || 0);
   const printTypePill = job.print_type
@@ -232,131 +429,142 @@ function createJobCard(job) {
     : "";
 
   article.innerHTML = `
-    <div class="card-top">
-      <strong>#${escapeHtml(job.order_number)}</strong>
-      ${
-        job.print_type
-          ? `<span class="${printBadgeClass}">${escapeHtml(job.print_type)}</span>`
-          : ""
-      }
+    <!-- Compact header -->
+    <div class="card-top compact-card-top">
+      <div class="card-top-left">
+        <strong>#${escapeHtml(job.order_number)}</strong>
+        ${ageLabel ? `<span class="age-badge ${escapeHtml(agingLevel)}">${escapeHtml(ageLabel)}</span>` : ""}
+        ${stuckLabel ? `<span class="stuck-badge">${escapeHtml(stuckLabel)}</span>` : ""}
+      </div>
+
+      <div class="card-top-actions">
+        <button
+          type="button"
+          class="mini-move-btn move-left-compact"
+          ${!canMoveLeft ? "disabled" : ""}
+          aria-label="Move job left"
+          title="Move left"
+        >
+          ←
+        </button>
+
+        <button
+          type="button"
+          class="mini-move-btn move-right-compact"
+          ${!canMoveRight ? "disabled" : ""}
+          aria-label="Move job right"
+          title="Move right"
+        >
+          →
+        </button>
+      </div>
     </div>
+
     <h3>${escapeHtml(job.customer_name)}</h3>
-    <p class="card-items">${escapeHtml(job.items_summary || "")}</p>
-    <div class="card-meta">
-      ${qtyPill}
-      ${printTypePill}
-    </div>
-    ${job.notes ? `<p class="notes">${escapeHtml(job.notes)}</p>` : ""}
+
     ${
-      flags.length
-        ? `<div class="flags">
-            ${flags.map((flag) => `<span class="flag">${escapeHtml(flag)}</span>`).join("")}
+      quickFlags.length
+        ? `<div class="quick-flags">
+            ${quickFlags
+              .map(
+                (flag) => `
+                  <button
+                    type="button"
+                    class="quick-flag-btn ${flag.active ? "active" : ""}"
+                    data-flag-key="${escapeHtml(flag.key)}"
+                    aria-pressed="${flag.active ? "true" : "false"}"
+                    title="${escapeHtml(flag.label)}"
+                  >
+                    ${escapeHtml(flag.label)}
+                  </button>
+                `
+              )
+              .join("")}
           </div>`
         : ""
     }
+
     <button type="button" class="toggle-flags-btn">Details</button>
-    <div class="flag-toggles hidden"></div>
-    <div class="card-actions">
-      <button type="button" class="move-left" ${!canMoveLeft ? "disabled" : ""}>←</button>
-      <button type="button" class="move-right" ${!canMoveRight ? "disabled" : ""}>→</button>
+
+    <!-- Expanded details -->
+    <div class="card-details hidden">
+      <p class="card-items">${escapeHtml(job.items_summary || "")}</p>
+
+      <div class="card-meta">
+        ${qtyPill}
+        ${printTypePill}
+      </div>
+
+      ${
+        flags.length
+          ? `<div class="flags">
+              ${flags.map((f) => `<span class="flag">${escapeHtml(f)}</span>`).join("")}
+            </div>`
+          : ""
+      }
+
+      ${job.notes ? `<p class="notes">${escapeHtml(job.notes)}</p>` : ""}
     </div>
   `;
 
   const toggleBtn = article.querySelector(".toggle-flags-btn");
-  const flagTogglesEl = article.querySelector(".flag-toggles");
-  const moveLeftBtn = article.querySelector(".move-left");
-  const moveRightBtn = article.querySelector(".move-right");
+  const detailsEl = article.querySelector(".card-details");
+  const compactMoveLeftBtn = article.querySelector(".move-left-compact");
+  const compactMoveRightBtn = article.querySelector(".move-right-compact");
+  const quickFlagButtons = article.querySelectorAll(".quick-flag-btn");
 
   toggleBtn.addEventListener("click", () => {
-    const isHidden = flagTogglesEl.classList.toggle("hidden");
-    toggleBtn.textContent = isHidden ? "Details" : "Hide Details";
+    const isHidden = detailsEl.classList.toggle("hidden");
+    toggleBtn.textContent = isHidden ? "Details" : "Hide";
   });
 
-  async function handleFlagUpdate(payload) {
+  async function handleMove(newStatus, clickedButton) {
     try {
-      await updateJobFlags(job.id, payload);
+      if (clickedButton) clickedButton.disabled = true;
+      await updateJobStatus(job.id, newStatus);
       await loadJobs();
+      scrollToColumn(newStatus);
     } catch (error) {
       console.error(error);
-      showApiError("Could not update job flags", error);
+      showApiError("Could not move job", error);
     }
   }
 
-  flagTogglesEl.appendChild(
-    createCheckboxToggle("Blanks Ordered", job.blanks_ordered, (checked) =>
-      handleFlagUpdate({ blanks_ordered: checked })
-    )
-  );
-
-  flagTogglesEl.appendChild(
-    createCheckboxToggle("Blanks Received", job.blanks_received, (checked) =>
-      handleFlagUpdate({ blanks_received: checked })
-    )
-  );
-
-  if (job.print_type === "DTF") {
-    flagTogglesEl.appendChild(
-      createDtfSourceToggle(job, (value) => handleFlagUpdate({ dtf_source: value }))
-    );
-
-    flagTogglesEl.appendChild(
-      createCheckboxToggle("DTF Ready", job.dtf_ready, (checked) =>
-        handleFlagUpdate({ dtf_ready: checked })
-      )
-    );
-  }
-
-  if (job.print_type === "Screen Print") {
-    flagTogglesEl.appendChild(
-      createCheckboxToggle("Screens Made", job.screens_made, (checked) =>
-        handleFlagUpdate({ screens_made: checked })
-      )
-    );
-
-    flagTogglesEl.appendChild(
-      createCheckboxToggle("Ink On Hand", job.ink_on_hand, (checked) =>
-        handleFlagUpdate({ ink_on_hand: checked })
-      )
-    );
-
-    flagTogglesEl.appendChild(
-      createCheckboxToggle("Ink Ordered", job.ink_ordered, (checked) =>
-        handleFlagUpdate({ ink_ordered: checked })
-      )
-    );
+  async function handleQuickFlagToggle(flagKey, button) {
+    try {
+      button.disabled = true;
+      const currentValue = Boolean(job[flagKey]);
+      await updateJobFlags(job.id, { [flagKey]: !currentValue });
+      await loadJobs();
+      scrollToColumn(job.status);
+    } catch (error) {
+      console.error(error);
+      showApiError("Could not update quick flag", error);
+    }
   }
 
   if (canMoveLeft) {
-    moveLeftBtn.addEventListener("click", async () => {
-      try {
-        moveLeftBtn.disabled = true;
-        moveRightBtn.disabled = true;
-
-        const newStatus = STATUSES[currentIndex - 1];
-        await updateJobStatus(job.id, newStatus);
-        await loadJobs();
-      } catch (error) {
-        console.error(error);
-        showApiError("Could not move job left", error);
-      }
+    compactMoveLeftBtn.addEventListener("click", async () => {
+      const newStatus = STATUSES[currentIndex - 1];
+      await handleMove(newStatus, compactMoveLeftBtn);
     });
   }
 
   if (canMoveRight) {
-    moveRightBtn.addEventListener("click", async () => {
-      try {
-        moveLeftBtn.disabled = true;
-        moveRightBtn.disabled = true;
-
-        const newStatus = STATUSES[currentIndex + 1];
-        await updateJobStatus(job.id, newStatus);
-        await loadJobs();
-      } catch (error) {
-        console.error(error);
-        showApiError("Could not move job right", error);
-      }
+    compactMoveRightBtn.addEventListener("click", async () => {
+      const newStatus = STATUSES[currentIndex + 1];
+      await handleMove(newStatus, compactMoveRightBtn);
     });
   }
+
+  quickFlagButtons.forEach((button) => {
+    const flagKey = button.dataset.flagKey;
+    if (!flagKey) return;
+
+    button.addEventListener("click", async () => {
+      await handleQuickFlagToggle(flagKey, button);
+    });
+  });
 
   return article;
 }
@@ -369,8 +577,8 @@ function resetColumns() {
     const cardList = column.querySelector(".card-list");
     const countEl = column.querySelector(".count");
 
-    cardList.innerHTML = "";
-    countEl.textContent = "0";
+    if (cardList) cardList.innerHTML = "";
+    if (countEl) countEl.textContent = "0";
   });
 }
 
@@ -380,9 +588,9 @@ function updateColumnCounts() {
     const cards = column.querySelectorAll(".order-card");
     const cardList = column.querySelector(".card-list");
 
-    countEl.textContent = String(cards.length);
+    if (countEl) countEl.textContent = String(cards.length);
 
-    if (!cards.length) {
+    if (cardList && !cards.length) {
       cardList.innerHTML = `<p class="empty-state">No jobs here.</p>`;
     }
   });
@@ -429,31 +637,17 @@ async function handleSaveJob() {
     validateNewJobForm();
 
     const formData = new FormData(newJobForm);
+    const payload = Object.fromEntries(formData.entries());
 
-    const payload = {
-      order_number: formData.get("order_number")?.toString().trim(),
-      customer_name: formData.get("customer_name")?.toString().trim(),
-      items_summary: formData.get("items_summary")?.toString().trim(),
-      quantity: Number(formData.get("quantity") || 1),
-      print_type: formData.get("print_type")?.toString(),
-      status: formData.get("status")?.toString(),
-      dtf_source: formData.get("dtf_source")?.toString(),
-      notes: formData.get("notes")?.toString().trim(),
-      blanks_ordered: formData.has("blanks_ordered"),
-      blanks_received: formData.has("blanks_received"),
-      dtf_ready: formData.has("dtf_ready"),
-      screens_made: formData.has("screens_made"),
-      ink_on_hand: formData.has("ink_on_hand"),
-      ink_ordered: formData.has("ink_ordered"),
-    };
+    payload.quantity = Number(payload.quantity || 1);
 
     saveJobBtn.disabled = true;
     await createJob(payload);
     closeModal();
     await loadJobs();
-  } catch (error) {
-    console.error(error);
-    showApiError("Could not save job", error);
+  } catch (err) {
+    console.error(err);
+    showApiError("Could not save job", err);
   } finally {
     saveJobBtn.disabled = false;
   }
@@ -461,9 +655,6 @@ async function handleSaveJob() {
 
 // =====================
 // Form Safety
-// Purpose:
-// - Prevent implicit browser submit
-// - Prevent Enter from doing anything in form inputs
 // =====================
 newJobForm.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -479,9 +670,6 @@ newJobForm.addEventListener("keydown", (event) => {
 
 // =====================
 // Modal Safety
-// Purpose:
-// - Prevent clicks inside modal from bubbling anywhere weird
-// - Disable backdrop click close for now
 // =====================
 modalEl.addEventListener("click", (event) => {
   event.stopPropagation();
