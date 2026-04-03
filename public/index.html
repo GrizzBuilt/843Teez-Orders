@@ -11,15 +11,18 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>843 Teez Orders</title>
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>843 Teez Production Order Tracker</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <header class="topbar">
       <div>
         <h1>843 Teez Orders</h1>
-        <p class="subtitle">Shop order flow</p>
+        <p class="subtitle">Shop Order Flow ver 1.0</p>
       </div>
 
       <div class="topbar-actions">
@@ -27,6 +30,16 @@
           <input type="checkbox" id="show-complete-toggle" />
           <span>Show Complete</span>
         </label>
+
+        <button
+          class="theme-toggle-btn"
+          type="button"
+          id="theme-toggle-btn"
+          aria-pressed="false"
+          title="Toggle dark mode"
+        >
+          Dark Mode
+        </button>
 
         <button class="add-btn" type="button" id="new-order-btn">
           + New Order
@@ -77,12 +90,13 @@
     </main>
 
     <!-- =====================
-         New Job Modal
+         Job Modal
          Purpose:
          - Opens from the + New Order button
          - Creates a new production job
+         - Edits an existing production job
     ====================== -->
-    <div class="modal-backdrop hidden" id="job-modal-backdrop">
+    <div class="modal-backdrop hidden" id="job-modal-backdrop" aria-hidden="true">
       <div
         class="modal"
         id="job-modal"
@@ -91,7 +105,13 @@
         aria-labelledby="new-job-title"
       >
         <div class="modal-header">
-          <h2 id="new-job-title">New Job</h2>
+          <div class="modal-header-copy">
+            <h2 id="new-job-title">New Job</h2>
+            <p class="modal-subtitle">
+              Add a new order to the board.
+            </p>
+          </div>
+
           <button
             type="button"
             class="icon-btn"
@@ -103,93 +123,190 @@
         </div>
 
         <form id="new-job-form" class="job-form" novalidate>
-          <div class="form-grid">
-            <div class="form-field">
-              <label for="order_number">Order #</label>
-              <input type="text" id="order_number" name="order_number" required />
+          <input type="hidden" id="job_id" name="job_id" />
+
+          <div class="modal-body">
+            <div class="form-section">
+              <div class="section-heading">
+                <h3>Order Basics</h3>
+                <p>The main details you need to track the job.</p>
+              </div>
+
+              <div class="form-grid">
+                <div class="form-field">
+                  <label for="order_number">Order #</label>
+                  <input
+                    type="text"
+                    id="order_number"
+                    name="order_number"
+                    required
+                    autocomplete="off"
+                    enterkeyhint="next"
+                    placeholder="Example: 843-1024"
+                  />
+                  <p class="field-error" data-error-for="order_number"></p>
+                </div>
+
+                <div class="form-field">
+                  <label for="customer_name">Customer Name</label>
+                  <input
+                    type="text"
+                    id="customer_name"
+                    name="customer_name"
+                    required
+                    autocomplete="name"
+                    enterkeyhint="next"
+                    placeholder="Customer or business name"
+                  />
+                  <p class="field-error" data-error-for="customer_name"></p>
+                </div>
+
+                <div class="form-field form-field-full">
+                  <label for="items_summary">Items Summary</label>
+                  <input
+                    type="text"
+                    id="items_summary"
+                    name="items_summary"
+                    placeholder="Example: 5 sand tees / 2 black hoodies"
+                    enterkeyhint="next"
+                  />
+                  <p class="field-error" data-error-for="items_summary"></p>
+                </div>
+              </div>
             </div>
 
-            <div class="form-field">
-              <label for="customer_name">Customer Name</label>
-              <input type="text" id="customer_name" name="customer_name" required />
+            <div class="form-section">
+              <div class="section-heading">
+                <h3>Production Setup</h3>
+                <p>How the job starts and how you plan to print it.</p>
+              </div>
+
+              <div class="form-grid">
+                <div class="form-field form-field-compact">
+                  <label for="quantity">Qty</label>
+                  <input
+                    type="number"
+                    id="quantity"
+                    name="quantity"
+                    min="1"
+                    step="1"
+                    inputmode="numeric"
+                    value="1"
+                    enterkeyhint="next"
+                  />
+                  <p class="field-error" data-error-for="quantity"></p>
+                </div>
+
+                <div class="form-field">
+                  <label for="print_type">Print Type</label>
+                  <select id="print_type" name="print_type">
+                    <option value="">Select one</option>
+                    <option value="DTF">DTF</option>
+                    <option value="Screen Print">Screen Print</option>
+                  </select>
+                  <p class="field-error" data-error-for="print_type"></p>
+                </div>
+
+                <div class="form-field">
+                  <label for="status">Column</label>
+                  <select id="status" name="status">
+                    <option value="in_the_hole">In the Hole</option>
+                    <option value="on_deck">On Deck</option>
+                    <option value="at_the_plate">At the Plate</option>
+                    <option value="ready">Ready</option>
+                    <option value="complete">Complete</option>
+                  </select>
+                  <p class="field-error" data-error-for="status"></p>
+                </div>
+
+                <div class="form-field">
+                  <label for="due_date">Due Date</label>
+                  <input
+                    type="date"
+                    id="due_date"
+                    name="due_date"
+                    inputmode="numeric"
+                  />
+                  <p class="field-error" data-error-for="due_date"></p>
+                </div>
+
+                <div class="form-field">
+                  <label for="dtf_source">DTF Source</label>
+                  <select id="dtf_source" name="dtf_source">
+                    <option value="">None / N/A</option>
+                    <option value="in_house">In House</option>
+                    <option value="armour_ink">Armour Ink</option>
+                  </select>
+                  <p class="field-error" data-error-for="dtf_source"></p>
+                </div>
+              </div>
             </div>
 
-            <div class="form-field form-field-full">
-              <label for="items_summary">Items Summary</label>
-              <input
-                type="text"
-                id="items_summary"
-                name="items_summary"
-                placeholder="Example: 5 sand tees / 2 black hoodies"
-              />
+            <div class="form-section">
+              <div class="section-heading">
+                <h3>Notes</h3>
+                <p>Anything helpful for production or follow-up.</p>
+              </div>
+
+              <div class="form-grid">
+                <div class="form-field form-field-full">
+                  <label for="notes">Notes</label>
+                  <textarea
+                    id="notes"
+                    name="notes"
+                    rows="4"
+                    placeholder="Anything helpful for the board..."
+                  ></textarea>
+                  <p class="field-error" data-error-for="notes"></p>
+                </div>
+              </div>
             </div>
 
-            <div class="form-field">
-              <label for="quantity">Qty</label>
-              <input
-                type="number"
-                id="quantity"
-                name="quantity"
-                min="1"
-                step="1"
-                inputmode="numeric"
-                value="1"
-              />
-            </div>
+            <div class="form-section">
+              <div class="section-heading">
+                <h3>Quick Flags</h3>
+                <p>Tap any status that already applies to this job.</p>
+              </div>
 
-            <div class="form-field">
-              <label for="print_type">Print Type</label>
-              <select id="print_type" name="print_type">
-                <option value="">Select one</option>
-                <option value="DTF">DTF</option>
-                <option value="Screen Print">Screen Print</option>
-              </select>
-            </div>
+              <div class="checkbox-grid">
+                <label class="checkbox-card">
+                  <input type="checkbox" name="blanks_ordered" />
+                  <span>Blanks Ordered</span>
+                </label>
 
-            <div class="form-field">
-              <label for="status">Starting Column</label>
-              <select id="status" name="status">
-                <option value="in_the_hole">In the Hole</option>
-                <option value="on_deck">On Deck</option>
-                <option value="at_the_plate">At the Plate</option>
-                <option value="ready">Ready</option>
-              </select>
-            </div>
+                <label class="checkbox-card">
+                  <input type="checkbox" name="blanks_received" />
+                  <span>Blanks Received</span>
+                </label>
 
-            <div class="form-field">
-              <label for="dtf_source">DTF Source</label>
-              <select id="dtf_source" name="dtf_source">
-                <option value="">None / N/A</option>
-                <option value="in_house">In House</option>
-                <option value="armour_ink">Armour Ink</option>
-              </select>
-            </div>
+                <label class="checkbox-card">
+                  <input type="checkbox" name="dtf_ready" />
+                  <span>DTF Ready</span>
+                </label>
 
-            <div class="form-field form-field-full">
-              <label for="notes">Notes</label>
-              <textarea
-                id="notes"
-                name="notes"
-                rows="3"
-                placeholder="Anything helpful for the board..."
-              ></textarea>
-            </div>
-          </div>
+                <label class="checkbox-card">
+                  <input type="checkbox" name="screens_made" />
+                  <span>Screens Made</span>
+                </label>
 
-          <div class="checkbox-group">
-            <label><input type="checkbox" name="blanks_ordered" /> Blanks Ordered</label>
-            <label><input type="checkbox" name="blanks_received" /> Blanks Received</label>
-            <label><input type="checkbox" name="dtf_ready" /> DTF Ready</label>
-            <label><input type="checkbox" name="screens_made" /> Screens Made</label>
-            <label><input type="checkbox" name="ink_on_hand" /> Ink On Hand</label>
-            <label><input type="checkbox" name="ink_ordered" /> Ink Ordered</label>
+                <label class="checkbox-card">
+                  <input type="checkbox" name="ink_on_hand" />
+                  <span>Ink On Hand</span>
+                </label>
+
+                <label class="checkbox-card">
+                  <input type="checkbox" name="ink_ordered" />
+                  <span>Ink Ordered</span>
+                </label>
+              </div>
+            </div>
           </div>
 
           <div class="form-actions">
             <button type="button" class="secondary-btn" id="cancel-modal-btn">
               Cancel
             </button>
-            <button type="button" class="add-btn" id="save-job-btn">Save Job</button>
+            <button type="submit" class="add-btn" id="save-job-btn">Save Job</button>
           </div>
         </form>
       </div>

@@ -7,9 +7,13 @@
  * - Serves both the API and frontend files
  * - Stores production jobs for the 843 Teez shop board
  * - Auto-moves jobs from In the Hole to On Deck when required materials/prep are ready
+ * - Aging remains based on created_at
+ * - Due date support added for promised job deadlines
+ * - Edit Job route added for full board-based job updates
  */
 
 // =====================
+// /server.js
 // Dependencies
 // =====================
 const express = require("express");
@@ -59,11 +63,37 @@ db.serialize(() => {
       ink_ordered INTEGER NOT NULL DEFAULT 0,
       ready_for_pickup INTEGER NOT NULL DEFAULT 0,
       notes TEXT,
+      due_date TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       completed_at DATETIME
     )
   `);
+
+  // =====================
+  // Database Migration - due_date
+  // Purpose:
+  // - Safely adds due_date to existing databases
+  // - Prevents breaking older live installs
+  // =====================
+  db.all(`PRAGMA table_info(jobs)`, [], (pragmaErr, columns) => {
+    if (pragmaErr) {
+      console.error("Error reading jobs table schema:", pragmaErr.message);
+      return;
+    }
+
+    const hasDueDate = columns.some((column) => column.name === "due_date");
+
+    if (!hasDueDate) {
+      db.run(`ALTER TABLE jobs ADD COLUMN due_date TEXT`, (alterErr) => {
+        if (alterErr) {
+          console.error("Error adding due_date column:", alterErr.message);
+        } else {
+          console.log("Added due_date column to jobs table.");
+        }
+      });
+    }
+  });
 });
 
 // =====================
@@ -101,6 +131,123 @@ function shouldMoveToOnDeck(job) {
 
 function normalizeBoolean(value) {
   return value ? 1 : 0;
+}
+
+// =====================
+// Helpers - Due Date
+// Purpose:
+// - Stores due dates in YYYY-MM-DD format
+// - Accepts blank / missing values
+// =====================
+function normalizeDueDate(value) {
+  if (!value) {
+    return null;
+  }
+
+  const trimmed = String(value).trim();
+
+  if (!trimmed) {
+    return null;
+  }
+
+  const isValidDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(trimmed);
+
+  return isValidDateOnly ? trimmed : null;
+}
+
+// =====================
+// Helpers - Job Validation / Normalization
+// Purpose:
+// - Keep create/edit routes consistent
+// - Preserve manual status movement
+// =====================
+function getValidStatuses() {
+  return [
+    "in_the_hole",
+    "on_deck",
+    "at_the_plate",
+    "ready",
+    "complete",
+  ];
+}
+
+function normalizeStatus(value, fallback = "in_the_hole") {
+  const validStatuses = getValidStatuses();
+  return validStatuses.includes(value) ? value : fallback;
+}
+
+function normalizePrintType(value) {
+  if (!value) return "";
+
+  const trimmed = String(value).trim();
+
+  if (trimmed === "DTF") return "DTF";
+  if (trimmed === "Screen Print") return "Screen Print";
+
+  return "";
+}
+
+function normalizeDtfSource(value, printType) {
+  if (printType !== "DTF") {
+    return "";
+  }
+
+  const trimmed = String(value || "").trim();
+
+  if (trimmed === "in_house" || trimmed === "armour_ink") {
+    return trimmed;
+  }
+
+  return "";
+}
+
+function buildNormalizedJobPayload(input, options = {}) {
+  const {
+    existingJob = null,
+    defaultStatus = "in_the_hole",
+  } = options;
+
+  const printType = normalizePrintType(input.print_type);
+
+  const normalized = {
+    order_number: String(input.order_number || "").trim(),
+    customer_name: String(input.customer_name || "").trim(),
+    items_summary: String(input.items_summary || "").trim(),
+    quantity: Math.max(1, Number(input.quantity) || 1),
+    print_type: printType,
+    status: normalizeStatus(input.status, existingJob?.status || defaultStatus),
+    blanks_ordered: normalizeBoolean(input.blanks_ordered),
+    blanks_received: normalizeBoolean(input.blanks_received),
+    dtf_source: normalizeDtfSource(input.dtf_source, printType),
+    dtf_ready: normalizeBoolean(input.dtf_ready),
+    screens_made: normalizeBoolean(input.screens_made),
+    ink_on_hand: normalizeBoolean(input.ink_on_hand),
+    ink_ordered: normalizeBoolean(input.ink_ordered),
+    ready_for_pickup: normalizeBoolean(input.ready_for_pickup),
+    notes: String(input.notes || "").trim(),
+    due_date: normalizeDueDate(input.due_date),
+  };
+
+  if (printType !== "DTF") {
+    normalized.dtf_source = "";
+    normalized.dtf_ready = 0;
+  }
+
+  if (printType !== "Screen Print") {
+    normalized.screens_made = 0;
+    normalized.ink_on_hand = 0;
+    normalized.ink_ordered = 0;
+  }
+
+  return normalized;
+}
+
+function getCompletedAtForStatusChange(newStatus, existingCompletedAt) {
+  if (newStatus === "complete") {
+    return existingCompletedAt || new Date().toISOString();
+  }
+
+  return null;
 }
 
 // =====================
@@ -145,42 +292,22 @@ app.get("/api/jobs", (req, res) => {
 // Purpose:
 // - Adds a new production job to the board
 // - Defaults new jobs to In the Hole unless another status is provided
+// - Keeps aging based on created_at
+// - Stores optional due_date for promised deadline tracking
 // =====================
 app.post("/api/jobs", (req, res) => {
-  const {
-    order_number,
-    customer_name,
-    items_summary,
-    quantity,
-    print_type,
-    status,
-    blanks_ordered,
-    blanks_received,
-    dtf_source,
-    dtf_ready,
-    screens_made,
-    ink_on_hand,
-    ink_ordered,
-    ready_for_pickup,
-    notes,
-  } = req.body;
+  const normalizedJob = buildNormalizedJobPayload(req.body, {
+    defaultStatus: "in_the_hole",
+  });
 
-  if (!order_number || !customer_name) {
+  if (!normalizedJob.order_number || !normalizedJob.customer_name) {
     return res
       .status(400)
       .json({ error: "Order number and customer name are required" });
   }
 
-  const validStatuses = [
-    "in_the_hole",
-    "on_deck",
-    "at_the_plate",
-    "ready",
-    "complete",
-  ];
-
-  const finalStatus = validStatuses.includes(status) ? status : "in_the_hole";
-  const completedAt = finalStatus === "complete" ? new Date().toISOString() : null;
+  const completedAt =
+    normalizedJob.status === "complete" ? new Date().toISOString() : null;
 
   db.run(
     `
@@ -200,26 +327,28 @@ app.post("/api/jobs", (req, res) => {
         ink_ordered,
         ready_for_pickup,
         notes,
+        due_date,
         completed_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     [
-      order_number,
-      customer_name,
-      items_summary || "",
-      Number(quantity) || 1,
-      print_type || "",
-      finalStatus,
-      normalizeBoolean(blanks_ordered),
-      normalizeBoolean(blanks_received),
-      dtf_source || "",
-      normalizeBoolean(dtf_ready),
-      normalizeBoolean(screens_made),
-      normalizeBoolean(ink_on_hand),
-      normalizeBoolean(ink_ordered),
-      normalizeBoolean(ready_for_pickup),
-      notes || "",
+      normalizedJob.order_number,
+      normalizedJob.customer_name,
+      normalizedJob.items_summary,
+      normalizedJob.quantity,
+      normalizedJob.print_type,
+      normalizedJob.status,
+      normalizedJob.blanks_ordered,
+      normalizedJob.blanks_received,
+      normalizedJob.dtf_source,
+      normalizedJob.dtf_ready,
+      normalizedJob.screens_made,
+      normalizedJob.ink_on_hand,
+      normalizedJob.ink_ordered,
+      normalizedJob.ready_for_pickup,
+      normalizedJob.notes,
+      normalizedJob.due_date,
       completedAt,
     ],
     function (err) {
@@ -234,6 +363,106 @@ app.post("/api/jobs", (req, res) => {
       });
     }
   );
+});
+
+// =====================
+// Routes - Edit Job
+// Purpose:
+// - Updates a full job from the board edit modal
+// - Preserves manual movement logic
+// - Does NOT auto-move backward when flags are unchecked
+// - Updates completed_at if status changes to/from complete
+// =====================
+app.patch("/api/jobs/:id", (req, res) => {
+  const jobId = req.params.id;
+
+  db.get(`SELECT * FROM jobs WHERE id = ?`, [jobId], (loadErr, existingJob) => {
+    if (loadErr) {
+      console.error("Error loading job for edit:", loadErr.message);
+      return res.status(500).json({ error: "Failed to load job" });
+    }
+
+    if (!existingJob) {
+      return res.status(404).json({ error: "Job not found" });
+    }
+
+    const normalizedJob = buildNormalizedJobPayload(req.body, {
+      existingJob,
+      defaultStatus: existingJob.status || "in_the_hole",
+    });
+
+    if (!normalizedJob.order_number || !normalizedJob.customer_name) {
+      return res
+        .status(400)
+        .json({ error: "Order number and customer name are required" });
+    }
+
+    const completedAt = getCompletedAtForStatusChange(
+      normalizedJob.status,
+      existingJob.completed_at
+    );
+
+    db.run(
+      `
+        UPDATE jobs
+        SET order_number = ?,
+            customer_name = ?,
+            items_summary = ?,
+            quantity = ?,
+            print_type = ?,
+            status = ?,
+            blanks_ordered = ?,
+            blanks_received = ?,
+            dtf_source = ?,
+            dtf_ready = ?,
+            screens_made = ?,
+            ink_on_hand = ?,
+            ink_ordered = ?,
+            ready_for_pickup = ?,
+            notes = ?,
+            due_date = ?,
+            updated_at = CURRENT_TIMESTAMP,
+            completed_at = ?
+        WHERE id = ?
+      `,
+      [
+        normalizedJob.order_number,
+        normalizedJob.customer_name,
+        normalizedJob.items_summary,
+        normalizedJob.quantity,
+        normalizedJob.print_type,
+        normalizedJob.status,
+        normalizedJob.blanks_ordered,
+        normalizedJob.blanks_received,
+        normalizedJob.dtf_source,
+        normalizedJob.dtf_ready,
+        normalizedJob.screens_made,
+        normalizedJob.ink_on_hand,
+        normalizedJob.ink_ordered,
+        normalizedJob.ready_for_pickup,
+        normalizedJob.notes,
+        normalizedJob.due_date,
+        completedAt,
+        jobId,
+      ],
+      function (updateErr) {
+        if (updateErr) {
+          console.error("Error updating job:", updateErr.message);
+          return res.status(500).json({ error: "Failed to update job" });
+        }
+
+        if (this.changes === 0) {
+          return res.status(404).json({ error: "Job not found" });
+        }
+
+        res.json({
+          ok: true,
+          id: Number(jobId),
+          status: normalizedJob.status,
+        });
+      }
+    );
+  });
 });
 
 // =====================
@@ -270,12 +499,26 @@ app.patch("/api/jobs/:id/flags", (req, res) => {
     allowedFields.forEach((field) => {
       if (field in req.body) {
         if (field === "dtf_source") {
-          updatedJob[field] = req.body[field] || "";
+          updatedJob[field] =
+            updatedJob.print_type === "DTF"
+              ? normalizeDtfSource(req.body[field], updatedJob.print_type)
+              : "";
         } else {
           updatedJob[field] = normalizeBoolean(req.body[field]);
         }
       }
     });
+
+    if (updatedJob.print_type !== "DTF") {
+      updatedJob.dtf_source = "";
+      updatedJob.dtf_ready = 0;
+    }
+
+    if (updatedJob.print_type !== "Screen Print") {
+      updatedJob.screens_made = 0;
+      updatedJob.ink_on_hand = 0;
+      updatedJob.ink_ordered = 0;
+    }
 
     if (shouldMoveToOnDeck(updatedJob)) {
       updatedJob.status = "on_deck";
@@ -334,42 +577,50 @@ app.patch("/api/jobs/:id/status", (req, res) => {
   const jobId = req.params.id;
   const { status } = req.body;
 
-  const validStatuses = [
-    "in_the_hole",
-    "on_deck",
-    "at_the_plate",
-    "ready",
-    "complete",
-  ];
+  const validStatuses = getValidStatuses();
 
   if (!validStatuses.includes(status)) {
     return res.status(400).json({ error: "Invalid status" });
   }
 
-  const completedAt = status === "complete" ? new Date().toISOString() : null;
-
-  db.run(
-    `
-      UPDATE jobs
-      SET status = ?,
-          updated_at = CURRENT_TIMESTAMP,
-          completed_at = ?
-      WHERE id = ?
-    `,
-    [status, completedAt, jobId],
-    function (err) {
-      if (err) {
-        console.error("Error updating job status:", err.message);
-        return res.status(500).json({ error: "Failed to update job status" });
-      }
-
-      if (this.changes === 0) {
-        return res.status(404).json({ error: "Job not found" });
-      }
-
-      res.json({ ok: true, id: Number(jobId), status });
+  db.get(`SELECT * FROM jobs WHERE id = ?`, [jobId], (loadErr, existingJob) => {
+    if (loadErr) {
+      console.error("Error loading job for status update:", loadErr.message);
+      return res.status(500).json({ error: "Failed to load job" });
     }
-  );
+
+    if (!existingJob) {
+      return res.status(404).json({ error: "Job not found" });
+    }
+
+    const completedAt = getCompletedAtForStatusChange(
+      status,
+      existingJob.completed_at
+    );
+
+    db.run(
+      `
+        UPDATE jobs
+        SET status = ?,
+            updated_at = CURRENT_TIMESTAMP,
+            completed_at = ?
+        WHERE id = ?
+      `,
+      [status, completedAt, jobId],
+      function (err) {
+        if (err) {
+          console.error("Error updating job status:", err.message);
+          return res.status(500).json({ error: "Failed to update job status" });
+        }
+
+        if (this.changes === 0) {
+          return res.status(404).json({ error: "Job not found" });
+        }
+
+        res.json({ ok: true, id: Number(jobId), status });
+      }
+    );
+  });
 });
 
 // =====================

@@ -12,6 +12,11 @@
  * - Stuck job detection added
  * - Quick flags added to compact card
  * - Mobile + tablet + desktop friendly
+ * - New Order modal improved for mobile-first form use
+ * - Due date support added while keeping aging based on created_at
+ * - Jobs sort by due-date urgency within each column
+ * - Edit Job support added using the same modal/form
+ * - Dark mode toggle added with saved preference
  */
 
 // =====================
@@ -24,6 +29,8 @@ const STATUSES = [
   "ready",
   "complete",
 ];
+
+const THEME_STORAGE_KEY = "843teez-orders-theme";
 
 // =====================
 // Aging Logic
@@ -203,19 +210,173 @@ function getStuckLabel(job) {
 }
 
 // =====================
+// Due Date Logic
+// Purpose:
+// - Show urgency based on due_date
+// - Keep due date separate from aging
+// =====================
+function parseDateOnly(dateString) {
+  if (!dateString) return null;
+
+  const trimmed = String(dateString).trim();
+  if (!trimmed) return null;
+
+  const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+
+  const [, year, month, day] = match;
+  return new Date(Number(year), Number(month) - 1, Number(day));
+}
+
+function getCalendarDayDiff(fromDate, toDate) {
+  const start = startOfDay(fromDate);
+  const end = startOfDay(toDate);
+  const msPerDay = 1000 * 60 * 60 * 24;
+
+  return Math.round((end - start) / msPerDay);
+}
+
+function formatDueDate(dateString) {
+  const parsed = parseDateOnly(dateString);
+  if (!parsed) return "";
+
+  return parsed.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function getDueDateStatus(job) {
+  if (!job?.due_date) return null;
+
+  const dueDate = parseDateOnly(job.due_date);
+  if (!dueDate) return null;
+
+  const today = startOfDay(new Date());
+  const diffDays = getCalendarDayDiff(today, dueDate);
+
+  if (diffDays < 0) {
+    return {
+      label: "Overdue",
+      className: "due-overdue",
+    };
+  }
+
+  if (diffDays === 0) {
+    return {
+      label: "Due Today",
+      className: "due-today",
+    };
+  }
+
+  if (diffDays === 1) {
+    return {
+      label: "Due Tomorrow",
+      className: "due-soon",
+    };
+  }
+
+  return {
+    label: `Due ${formatDueDate(job.due_date)}`,
+    className: "due-normal",
+  };
+}
+
+// =====================
+// Board Sort Logic
+// Purpose:
+// - Prioritize urgent due dates inside each column
+// - Keep no-due-date jobs below dated jobs
+// - Fall back to created_at so older jobs still rise naturally
+// =====================
+function getDueSortValue(job) {
+  const dueDate = parseDateOnly(job?.due_date);
+
+  if (!dueDate) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  return startOfDay(dueDate).getTime();
+}
+
+function getCreatedAtSortValue(job) {
+  const createdAt = new Date(job?.created_at || 0);
+  const timestamp = createdAt.getTime();
+
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function compareJobsForBoard(a, b) {
+  const aDue = getDueSortValue(a);
+  const bDue = getDueSortValue(b);
+
+  if (aDue !== bDue) {
+    return aDue - bDue;
+  }
+
+  return getCreatedAtSortValue(a) - getCreatedAtSortValue(b);
+}
+
+// =====================
 // DOM Elements
 // =====================
+const bodyEl = document.body;
 const boardEl = document.querySelector(".board");
 const showCompleteToggle = document.getElementById("show-complete-toggle");
 const completeColumn = document.getElementById("complete-column");
 
 const newOrderBtn = document.getElementById("new-order-btn");
+const themeToggleBtn = document.getElementById("theme-toggle-btn");
 const modalBackdrop = document.getElementById("job-modal-backdrop");
 const modalEl = document.getElementById("job-modal");
 const closeModalBtn = document.getElementById("close-modal-btn");
 const cancelModalBtn = document.getElementById("cancel-modal-btn");
 const newJobForm = document.getElementById("new-job-form");
 const saveJobBtn = document.getElementById("save-job-btn");
+
+const orderNumberInput = document.getElementById("order_number");
+const customerNameInput = document.getElementById("customer_name");
+const itemsSummaryInput = document.getElementById("items_summary");
+const quantityInput = document.getElementById("quantity");
+const printTypeSelect = document.getElementById("print_type");
+const statusSelect = document.getElementById("status");
+const dueDateInput = document.getElementById("due_date");
+const dtfSourceSelect = document.getElementById("dtf_source");
+const notesInput = document.getElementById("notes");
+
+const blanksOrderedInput = newJobForm?.elements?.namedItem("blanks_ordered") || null;
+const blanksReceivedInput = newJobForm?.elements?.namedItem("blanks_received") || null;
+const dtfReadyInput = newJobForm?.elements?.namedItem("dtf_ready") || null;
+const screensMadeInput = newJobForm?.elements?.namedItem("screens_made") || null;
+const inkOnHandInput = newJobForm?.elements?.namedItem("ink_on_hand") || null;
+const inkOrderedInput = newJobForm?.elements?.namedItem("ink_ordered") || null;
+
+// Optional UI hooks for updated HTML
+const modalTitleEl = document.getElementById("new-job-title");
+const modalSubtitleEl = document.querySelector(".modal-subtitle");
+const printTypeHintEl = document.querySelector("[data-print-type-hint]");
+const dtfFieldsSection = document.querySelector("[data-print-type-section='dtf']");
+const screenPrintFieldsSection = document.querySelector(
+  "[data-print-type-section='screen_print']"
+);
+const dtfSourceField = document.getElementById("dtf_source")?.closest(".form-field");
+const dtfReadyField =
+  dtfReadyInput?.closest("label, .checkbox-chip, .checkbox-card, .checkbox-row") || null;
+const screensMadeField =
+  screensMadeInput?.closest("label, .checkbox-chip, .checkbox-card, .checkbox-row") || null;
+const inkOnHandField =
+  inkOnHandInput?.closest("label, .checkbox-chip, .checkbox-card, .checkbox-row") || null;
+const inkOrderedField =
+  inkOrderedInput?.closest("label, .checkbox-chip, .checkbox-card, .checkbox-row") || null;
+
+// =====================
+// Modal State
+// =====================
+let lastFocusedElement = null;
+let isSavingJob = false;
+let formMode = "create";
+let editingJobId = null;
+let jobsCache = [];
 
 // =====================
 // Helpers
@@ -229,42 +390,249 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
+function showElement(element, show) {
+  if (!element) return;
+
+  if ("hidden" in element) {
+    element.hidden = !show;
+  }
+
+  element.style.display = show ? "" : "none";
+}
+
+function setDisabledForElements(elements, disabled) {
+  elements.forEach((element) => {
+    if (!element) return;
+    element.disabled = disabled;
+  });
+}
+
+function getFocusableElements(container) {
+  if (!container) return [];
+
+  return Array.from(
+    container.querySelectorAll(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    )
+  ).filter((element) => {
+    return !element.hasAttribute("hidden") && element.offsetParent !== null;
+  });
+}
+
+function setBodyModalOpen(isOpen) {
+  bodyEl.classList.toggle("modal-open", isOpen);
+}
+
+function resetFormValidationState() {
+  if (!newJobForm) return;
+
+  newJobForm
+    .querySelectorAll(".is-invalid")
+    .forEach((field) => field.classList.remove("is-invalid"));
+
+  newJobForm
+    .querySelectorAll("[data-error-for]")
+    .forEach((el) => (el.textContent = ""));
+}
+
+function markFieldInvalid(field, message) {
+  if (!field) return;
+
+  field.classList.add("is-invalid");
+  field.focus({ preventScroll: false });
+
+  const errorTarget = newJobForm?.querySelector(
+    `[data-error-for="${field.name}"]`
+  );
+
+  if (errorTarget) {
+    errorTarget.textContent = message;
+  }
+}
+
+function clearFieldInvalid(field) {
+  if (!field) return;
+
+  field.classList.remove("is-invalid");
+
+  const errorTarget = newJobForm?.querySelector(
+    `[data-error-for="${field.name}"]`
+  );
+
+  if (errorTarget) {
+    errorTarget.textContent = "";
+  }
+}
+
+function normalizePrintType(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+
+  if (normalized === "screen print" || normalized === "screen_print") {
+    return "screen_print";
+  }
+
+  if (normalized === "dtf") {
+    return "dtf";
+  }
+
+  return "";
+}
+
+function getJobById(jobId) {
+  return jobsCache.find((job) => Number(job.id) === Number(jobId)) || null;
+}
+
+function resetModalState() {
+  formMode = "create";
+  editingJobId = null;
+
+  if (newJobForm) {
+    newJobForm.reset();
+  }
+
+  resetFormValidationState();
+
+  if (quantityInput) quantityInput.value = 1;
+  if (statusSelect) statusSelect.value = "in_the_hole";
+  if (printTypeSelect) printTypeSelect.value = "";
+  if (dueDateInput) dueDateInput.value = "";
+  if (dtfSourceSelect) dtfSourceSelect.value = "";
+
+  syncPrintTypeSections();
+  syncFormStateForPrintType();
+  syncModalCopy();
+}
+
+function syncModalCopy() {
+  const normalizedPrintType = normalizePrintType(printTypeSelect?.value);
+  const isEdit = formMode === "edit";
+
+  if (modalTitleEl) {
+    if (isEdit && normalizedPrintType === "dtf") {
+      modalTitleEl.textContent = "Edit DTF Job";
+    } else if (isEdit && normalizedPrintType === "screen_print") {
+      modalTitleEl.textContent = "Edit Screen Print Job";
+    } else if (isEdit) {
+      modalTitleEl.textContent = "Edit Job";
+    } else if (normalizedPrintType === "dtf") {
+      modalTitleEl.textContent = "New DTF Job";
+    } else if (normalizedPrintType === "screen_print") {
+      modalTitleEl.textContent = "New Screen Print Job";
+    } else {
+      modalTitleEl.textContent = "New Job";
+    }
+  }
+
+  if (modalSubtitleEl) {
+    modalSubtitleEl.textContent = isEdit
+      ? "Update this order on the board."
+      : "Add a new order to the board.";
+  }
+
+  if (saveJobBtn) {
+    if (isSavingJob) {
+      saveJobBtn.textContent = "Saving...";
+    } else {
+      saveJobBtn.textContent = isEdit ? "Update Job" : "Save Job";
+    }
+  }
+}
+
+// =====================
+// Theme Toggle
+// Purpose:
+// - Toggle dark mode on/off
+// - Save preference in localStorage
+// =====================
+function applyTheme(theme) {
+  const isDark = theme === "dark";
+
+  bodyEl.classList.toggle("dark-mode", isDark);
+
+  if (themeToggleBtn) {
+    themeToggleBtn.textContent = isDark ? "Light Mode" : "Dark Mode";
+    themeToggleBtn.setAttribute("aria-pressed", String(isDark));
+    themeToggleBtn.setAttribute(
+      "title",
+      isDark ? "Switch to light mode" : "Switch to dark mode"
+    );
+  }
+}
+
+function loadSavedTheme() {
+  const savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
+  const theme = savedTheme === "dark" ? "dark" : "light";
+  applyTheme(theme);
+}
+
 function openModal() {
+  if (!modalBackdrop || !newJobForm) return;
+
+  resetModalState();
+  lastFocusedElement = document.activeElement;
   modalBackdrop.classList.remove("hidden");
+  setBodyModalOpen(true);
+
+  window.requestAnimationFrame(() => {
+    const firstTarget = orderNumberInput || customerNameInput || modalEl;
+    firstTarget?.focus();
+  });
+}
+
+function openEditModal(job) {
+  if (!modalBackdrop || !newJobForm || !job) return;
+
+  resetModalState();
+
+  formMode = "edit";
+  editingJobId = job.id;
+  lastFocusedElement = document.activeElement;
+
+  if (orderNumberInput) orderNumberInput.value = job.order_number || "";
+  if (customerNameInput) customerNameInput.value = job.customer_name || "";
+  if (itemsSummaryInput) itemsSummaryInput.value = job.items_summary || "";
+  if (quantityInput) quantityInput.value = Number(job.quantity) || 1;
+  if (printTypeSelect) printTypeSelect.value = job.print_type || "";
+  if (statusSelect) statusSelect.value = job.status || "in_the_hole";
+  if (dueDateInput) dueDateInput.value = job.due_date || "";
+  if (dtfSourceSelect) dtfSourceSelect.value = job.dtf_source || "";
+  if (notesInput) notesInput.value = job.notes || "";
+
+  if (blanksOrderedInput) blanksOrderedInput.checked = Boolean(job.blanks_ordered);
+  if (blanksReceivedInput) blanksReceivedInput.checked = Boolean(job.blanks_received);
+  if (dtfReadyInput) dtfReadyInput.checked = Boolean(job.dtf_ready);
+  if (screensMadeInput) screensMadeInput.checked = Boolean(job.screens_made);
+  if (inkOnHandInput) inkOnHandInput.checked = Boolean(job.ink_on_hand);
+  if (inkOrderedInput) inkOrderedInput.checked = Boolean(job.ink_ordered);
+
+  syncPrintTypeSections();
+  syncModalCopy();
+
+  modalBackdrop.classList.remove("hidden");
+  setBodyModalOpen(true);
+
+  window.requestAnimationFrame(() => {
+    const firstTarget = customerNameInput || orderNumberInput || modalEl;
+    firstTarget?.focus();
+  });
 }
 
 function closeModal() {
+  if (!modalBackdrop || !newJobForm) return;
+
   modalBackdrop.classList.add("hidden");
-  newJobForm.reset();
-  newJobForm.quantity.value = 1;
-  newJobForm.status.value = "in_the_hole";
+  setBodyModalOpen(false);
+
+  resetModalState();
+
+  if (lastFocusedElement && typeof lastFocusedElement.focus === "function") {
+    lastFocusedElement.focus();
+  }
 }
 
 function showApiError(prefix, error) {
   const message = error?.message ? `${prefix}: ${error.message}` : prefix;
   alert(message);
-}
-
-function validateNewJobForm() {
-  const orderNumber = newJobForm.order_number.value.trim();
-  const customerName = newJobForm.customer_name.value.trim();
-  const quantity = Number(newJobForm.quantity.value || 1);
-
-  if (!orderNumber) {
-    throw new Error("Order number is required");
-  }
-
-  if (!customerName) {
-    throw new Error("Customer name is required");
-  }
-
-  if (!Number.isFinite(quantity) || quantity < 1) {
-    throw new Error("Quantity must be at least 1");
-  }
-}
-
-function buildMetaPill(label, value) {
-  return `<span class="meta-pill">${escapeHtml(label)}: ${escapeHtml(value)}</span>`;
 }
 
 function scrollToColumn(status) {
@@ -278,9 +646,131 @@ function scrollToColumn(status) {
   });
 }
 
+function buildMetaPill(label, value) {
+  return `<span class="meta-pill">${escapeHtml(label)}: ${escapeHtml(value)}</span>`;
+}
+
 function formatPrintType(printType) {
   if (!printType) return "";
   return printType;
+}
+
+function syncPrintTypeSections() {
+  const type = normalizePrintType(printTypeSelect?.value);
+
+  const showDtf = type === "dtf";
+  const showScreenPrint = type === "screen_print";
+
+  showElement(dtfFieldsSection, showDtf);
+  showElement(screenPrintFieldsSection, showScreenPrint);
+
+  // Graceful fallback for older HTML that doesn't have grouped sections
+  showElement(dtfSourceField, showDtf);
+  showElement(dtfReadyField, showDtf);
+
+  showElement(screensMadeField, showScreenPrint);
+  showElement(inkOnHandField, showScreenPrint);
+  showElement(inkOrderedField, showScreenPrint);
+
+  if (printTypeHintEl) {
+    if (showDtf) {
+      printTypeHintEl.textContent = "DTF selected — show DTF-specific fields.";
+    } else if (showScreenPrint) {
+      printTypeHintEl.textContent =
+        "Screen Print selected — show screen print fields.";
+    } else {
+      printTypeHintEl.textContent =
+        "Choose a print type to show only the fields you need.";
+    }
+  }
+
+  syncModalCopy();
+}
+
+function syncFormStateForPrintType() {
+  const type = normalizePrintType(printTypeSelect?.value);
+
+  if (type !== "dtf") {
+    if (dtfSourceSelect) dtfSourceSelect.value = "";
+    if (dtfReadyInput) dtfReadyInput.checked = false;
+  }
+
+  if (type !== "screen_print") {
+    if (screensMadeInput) screensMadeInput.checked = false;
+    if (inkOnHandInput) inkOnHandInput.checked = false;
+    if (inkOrderedInput) inkOrderedInput.checked = false;
+  }
+}
+
+function getFormPayload() {
+  const formData = new FormData(newJobForm);
+  const payload = Object.fromEntries(formData.entries());
+
+  payload.quantity = Number(payload.quantity || 1);
+  payload.items_summary = itemsSummaryInput?.value?.trim?.() || "";
+  payload.notes = notesInput?.value?.trim?.() || "";
+  payload.order_number = orderNumberInput?.value?.trim?.() || "";
+  payload.customer_name = customerNameInput?.value?.trim?.() || "";
+  payload.print_type = printTypeSelect?.value || "";
+  payload.status = statusSelect?.value || "in_the_hole";
+  payload.due_date = dueDateInput?.value || "";
+
+  payload.blanks_ordered = Boolean(blanksOrderedInput?.checked);
+  payload.blanks_received = Boolean(blanksReceivedInput?.checked);
+  payload.dtf_ready = Boolean(dtfReadyInput?.checked);
+  payload.screens_made = Boolean(screensMadeInput?.checked);
+  payload.ink_on_hand = Boolean(inkOnHandInput?.checked);
+  payload.ink_ordered = Boolean(inkOrderedInput?.checked);
+
+  const type = normalizePrintType(payload.print_type);
+
+  if (type !== "dtf") {
+    payload.dtf_source = "";
+    payload.dtf_ready = false;
+  } else {
+    payload.dtf_source = dtfSourceSelect?.value || "";
+  }
+
+  if (type !== "screen_print") {
+    payload.screens_made = false;
+    payload.ink_on_hand = false;
+    payload.ink_ordered = false;
+  }
+
+  return payload;
+}
+
+function validateNewJobForm() {
+  resetFormValidationState();
+
+  const orderNumber = orderNumberInput?.value.trim() || "";
+  const customerName = customerNameInput?.value.trim() || "";
+  const quantity = Number(quantityInput?.value || 1);
+
+  if (!orderNumber) {
+    markFieldInvalid(orderNumberInput, "Order number is required.");
+    throw new Error("Order number is required");
+  }
+
+  if (!customerName) {
+    markFieldInvalid(customerNameInput, "Customer name is required.");
+    throw new Error("Customer name is required");
+  }
+
+  if (!Number.isFinite(quantity) || quantity < 1) {
+    markFieldInvalid(quantityInput, "Quantity must be at least 1.");
+    throw new Error("Quantity must be at least 1");
+  }
+}
+
+function setSavingState(isSaving) {
+  isSavingJob = isSaving;
+  syncModalCopy();
+
+  setDisabledForElements(
+    [closeModalBtn, cancelModalBtn, newOrderBtn],
+    isSaving
+  );
 }
 
 // =====================
@@ -386,6 +876,16 @@ async function createJob(payload) {
   return parseApiResponse(response, "Failed to create job");
 }
 
+async function updateJob(jobId, payload) {
+  const response = await fetch(`/api/jobs/${jobId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  return parseApiResponse(response, "Failed to update job");
+}
+
 async function updateJobFlags(jobId, payload) {
   const response = await fetch(`/api/jobs/${jobId}/flags`, {
     method: "PATCH",
@@ -403,11 +903,13 @@ function createJobCard(job) {
   const article = document.createElement("article");
   article.className = "order-card";
   article.dataset.status = job.status;
+  article.dataset.jobId = String(job.id);
 
   const agingLevel = getAgingLevel(job);
   const ageLabel = getAgeLabel(job);
   const stuckLevel = getStuckLevel(job);
   const stuckLabel = getStuckLabel(job);
+  const dueStatus = getDueDateStatus(job);
 
   if (agingLevel) {
     article.classList.add(agingLevel);
@@ -415,6 +917,10 @@ function createJobCard(job) {
 
   if (stuckLevel) {
     article.classList.add(stuckLevel);
+  }
+
+  if (dueStatus?.className) {
+    article.classList.add(dueStatus.className);
   }
 
   const flags = getFlags(job);
@@ -427,14 +933,30 @@ function createJobCard(job) {
   const printTypePill = job.print_type
     ? buildMetaPill("Type", formatPrintType(job.print_type))
     : "";
+  const dueDatePill = job.due_date
+    ? buildMetaPill("Due", formatDueDate(job.due_date))
+    : "";
 
   article.innerHTML = `
     <!-- Compact header -->
     <div class="card-top compact-card-top">
       <div class="card-top-left">
         <strong>#${escapeHtml(job.order_number)}</strong>
-        ${ageLabel ? `<span class="age-badge ${escapeHtml(agingLevel)}">${escapeHtml(ageLabel)}</span>` : ""}
-        ${stuckLabel ? `<span class="stuck-badge">${escapeHtml(stuckLabel)}</span>` : ""}
+        ${
+          ageLabel
+            ? `<span class="age-badge ${escapeHtml(agingLevel)}">${escapeHtml(ageLabel)}</span>`
+            : ""
+        }
+        ${
+          dueStatus
+            ? `<span class="due-badge ${escapeHtml(dueStatus.className)}">${escapeHtml(dueStatus.label)}</span>`
+            : ""
+        }
+        ${
+          stuckLabel
+            ? `<span class="stuck-badge">${escapeHtml(stuckLabel)}</span>`
+            : ""
+        }
       </div>
 
       <div class="card-top-actions">
@@ -484,7 +1006,9 @@ function createJobCard(job) {
         : ""
     }
 
-    <button type="button" class="toggle-flags-btn">Details</button>
+    <div class="card-row-actions">
+      <button type="button" class="toggle-flags-btn">Details</button>
+    </div>
 
     <!-- Expanded details -->
     <div class="card-details hidden">
@@ -493,6 +1017,7 @@ function createJobCard(job) {
       <div class="card-meta">
         ${qtyPill}
         ${printTypePill}
+        ${dueDatePill}
       </div>
 
       ${
@@ -504,6 +1029,16 @@ function createJobCard(job) {
       }
 
       ${job.notes ? `<p class="notes">${escapeHtml(job.notes)}</p>` : ""}
+
+      <div class="card-actions">
+        <button
+          type="button"
+          class="edit-job-btn"
+          data-job-id="${escapeHtml(job.id)}"
+        >
+          Edit
+        </button>
+      </div>
     </div>
   `;
 
@@ -512,6 +1047,7 @@ function createJobCard(job) {
   const compactMoveLeftBtn = article.querySelector(".move-left-compact");
   const compactMoveRightBtn = article.querySelector(".move-right-compact");
   const quickFlagButtons = article.querySelectorAll(".quick-flag-btn");
+  const editJobBtn = article.querySelector(".edit-job-btn");
 
   toggleBtn.addEventListener("click", () => {
     const isHidden = detailsEl.classList.toggle("hidden");
@@ -566,6 +1102,11 @@ function createJobCard(job) {
     });
   });
 
+  editJobBtn?.addEventListener("click", () => {
+    const freshJob = getJobById(job.id) || job;
+    openEditModal(freshJob);
+  });
+
   return article;
 }
 
@@ -602,14 +1143,20 @@ function updateColumnCounts() {
 async function loadJobs() {
   const showComplete = showCompleteToggle.checked;
 
-  completeColumn.hidden = !showComplete;
-  boardEl.classList.toggle("show-complete", showComplete);
+  if (completeColumn) {
+    completeColumn.hidden = !showComplete;
+  }
+
+  boardEl?.classList.toggle("show-complete", showComplete);
 
   resetColumns();
 
   try {
     const response = await fetch(`/api/jobs?showComplete=${showComplete}`);
     const jobs = await parseApiResponse(response, "Failed to load jobs");
+
+    jobs.sort(compareJobsForBoard);
+    jobsCache = jobs;
 
     jobs.forEach((job) => {
       const column = document.querySelector(`.column[data-status="${job.status}"]`);
@@ -630,71 +1177,175 @@ async function loadJobs() {
 }
 
 // =====================
-// Save New Job
+// Save / Update Job
 // =====================
 async function handleSaveJob() {
+  if (isSavingJob) return;
+
   try {
     validateNewJobForm();
 
-    const formData = new FormData(newJobForm);
-    const payload = Object.fromEntries(formData.entries());
+    const payload = getFormPayload();
 
-    payload.quantity = Number(payload.quantity || 1);
+    setSavingState(true);
 
-    saveJobBtn.disabled = true;
-    await createJob(payload);
+    if (formMode === "edit") {
+      if (!editingJobId) {
+        throw new Error("Missing job id for edit");
+      }
+
+      await updateJob(editingJobId, payload);
+    } else {
+      await createJob(payload);
+    }
+
+    const destinationStatus = payload.status || "in_the_hole";
+
     closeModal();
     await loadJobs();
+    scrollToColumn(destinationStatus);
   } catch (err) {
     console.error(err);
-    showApiError("Could not save job", err);
+    showApiError(
+      formMode === "edit" ? "Could not update job" : "Could not save job",
+      err
+    );
   } finally {
-    saveJobBtn.disabled = false;
+    setSavingState(false);
   }
 }
 
 // =====================
 // Form Safety
 // =====================
-newJobForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-});
-
-newJobForm.addEventListener("keydown", (event) => {
-  const tagName = event.target.tagName.toLowerCase();
-
-  if (event.key === "Enter" && tagName !== "textarea") {
+if (newJobForm) {
+  newJobForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-  }
-});
+    await handleSaveJob();
+  });
+
+  newJobForm.addEventListener("keydown", (event) => {
+    const tagName = event.target.tagName.toLowerCase();
+
+    if (event.key === "Enter" && tagName !== "textarea") {
+      event.preventDefault();
+
+      const focusable = getFocusableElements(newJobForm);
+      const currentIndex = focusable.indexOf(event.target);
+
+      if (currentIndex >= 0 && currentIndex < focusable.length - 1) {
+        focusable[currentIndex + 1].focus();
+      }
+    }
+  });
+
+  newJobForm.addEventListener("input", (event) => {
+    const target = event.target;
+
+    if (
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLSelectElement ||
+      target instanceof HTMLTextAreaElement
+    ) {
+      clearFieldInvalid(target);
+    }
+  });
+
+  newJobForm.addEventListener("change", (event) => {
+    const target = event.target;
+
+    if (target === printTypeSelect) {
+      syncPrintTypeSections();
+      syncFormStateForPrintType();
+    }
+
+    if (
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLSelectElement ||
+      target instanceof HTMLTextAreaElement
+    ) {
+      clearFieldInvalid(target);
+    }
+  });
+}
 
 // =====================
 // Modal Safety
 // =====================
-modalEl.addEventListener("click", (event) => {
-  event.stopPropagation();
-});
+if (modalEl) {
+  modalEl.addEventListener("click", (event) => {
+    event.stopPropagation();
+  });
 
-modalEl.addEventListener("mousedown", (event) => {
-  event.stopPropagation();
-});
+  modalEl.addEventListener("mousedown", (event) => {
+    event.stopPropagation();
+  });
+}
+
+if (modalBackdrop) {
+  modalBackdrop.addEventListener("click", (event) => {
+    if (event.target === modalBackdrop && !isSavingJob) {
+      closeModal();
+    }
+  });
+}
 
 // =====================
 // Modal Events
 // =====================
-newOrderBtn.addEventListener("click", openModal);
-closeModalBtn.addEventListener("click", closeModal);
-cancelModalBtn.addEventListener("click", closeModal);
-saveJobBtn.addEventListener("click", handleSaveJob);
+newOrderBtn?.addEventListener("click", openModal);
+
+themeToggleBtn?.addEventListener("click", () => {
+  const isDark = bodyEl.classList.contains("dark-mode");
+  const nextTheme = isDark ? "light" : "dark";
+
+  localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+  applyTheme(nextTheme);
+});
+
+closeModalBtn?.addEventListener("click", () => {
+  if (!isSavingJob) closeModal();
+});
+
+cancelModalBtn?.addEventListener("click", () => {
+  if (!isSavingJob) closeModal();
+});
+
+saveJobBtn?.addEventListener("click", handleSaveJob);
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !modalBackdrop.classList.contains("hidden")) {
+  const modalIsOpen = modalBackdrop && !modalBackdrop.classList.contains("hidden");
+
+  if (!modalIsOpen) return;
+
+  if (event.key === "Escape" && !isSavingJob) {
     closeModal();
+    return;
+  }
+
+  if (event.key === "Tab") {
+    const focusable = getFocusableElements(modalEl);
+    if (!focusable.length) return;
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement;
+
+    if (event.shiftKey && active === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault();
+      first.focus();
+    }
   }
 });
 
 // =====================
 // Init
 // =====================
-showCompleteToggle.addEventListener("change", loadJobs);
+resetModalState();
+loadSavedTheme();
+
+showCompleteToggle?.addEventListener("change", loadJobs);
 loadJobs();
