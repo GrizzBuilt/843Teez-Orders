@@ -11,3 +11,4 @@ db/orders.db
 
 # Local database backups
 backups/
+db/*.db
