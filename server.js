@@ -10,6 +10,7 @@
  * - Aging remains based on created_at
  * - Due date support added for promised job deadlines
  * - Edit Job route added for full board-based job updates
+ * - Board refresh support added with /api/jobs/last-updated
  */
 
 // =====================
@@ -71,10 +72,10 @@ db.serialize(() => {
   `);
 
   // =====================
-  // Database Migration - due_date
+  // Database Migration - Safe Column Adds
   // Purpose:
-  // - Safely adds due_date to existing databases
-  // - Prevents breaking older live installs
+  // - Safely adds missing columns to existing live databases
+  // - Prevents breaking older installs
   // =====================
   db.all(`PRAGMA table_info(jobs)`, [], (pragmaErr, columns) => {
     if (pragmaErr) {
@@ -83,6 +84,8 @@ db.serialize(() => {
     }
 
     const hasDueDate = columns.some((column) => column.name === "due_date");
+    const hasUpdatedAt = columns.some((column) => column.name === "updated_at");
+    const hasCompletedAt = columns.some((column) => column.name === "completed_at");
 
     if (!hasDueDate) {
       db.run(`ALTER TABLE jobs ADD COLUMN due_date TEXT`, (alterErr) => {
@@ -90,6 +93,43 @@ db.serialize(() => {
           console.error("Error adding due_date column:", alterErr.message);
         } else {
           console.log("Added due_date column to jobs table.");
+        }
+      });
+    }
+
+    if (!hasUpdatedAt) {
+      db.run(
+        `ALTER TABLE jobs ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP`,
+        (alterErr) => {
+          if (alterErr) {
+            console.error("Error adding updated_at column:", alterErr.message);
+          } else {
+            console.log("Added updated_at column to jobs table.");
+
+            db.run(
+              `
+                UPDATE jobs
+                SET updated_at = COALESCE(updated_at, created_at, CURRENT_TIMESTAMP)
+              `,
+              (seedErr) => {
+                if (seedErr) {
+                  console.error("Error seeding updated_at values:", seedErr.message);
+                } else {
+                  console.log("Seeded updated_at values for existing jobs.");
+                }
+              }
+            );
+          }
+        }
+      );
+    }
+
+    if (!hasCompletedAt) {
+      db.run(`ALTER TABLE jobs ADD COLUMN completed_at DATETIME`, (alterErr) => {
+        if (alterErr) {
+          console.error("Error adding completed_at column:", alterErr.message);
+        } else {
+          console.log("Added completed_at column to jobs table.");
         }
       });
     }
@@ -288,6 +328,36 @@ app.get("/api/jobs", (req, res) => {
 });
 
 // =====================
+// Routes - Last Updated
+// Purpose:
+// - Returns the latest updated_at timestamp for the current board view
+// - Supports smart frontend auto-refresh that only reloads when data changed
+// =====================
+app.get("/api/jobs/last-updated", (req, res) => {
+  const showComplete = req.query.showComplete === "true";
+
+  let sql = `
+    SELECT MAX(updated_at) AS lastUpdated
+    FROM jobs
+  `;
+
+  if (!showComplete) {
+    sql += ` WHERE status != 'complete' `;
+  }
+
+  db.get(sql, [], (err, row) => {
+    if (err) {
+      console.error("Error fetching last updated timestamp:", err.message);
+      return res.status(500).json({ error: "Failed to fetch last updated timestamp" });
+    }
+
+    res.json({
+      lastUpdated: row?.lastUpdated || null,
+    });
+  });
+});
+
+// =====================
 // Routes - Create Job
 // Purpose:
 // - Adds a new production job to the board
@@ -373,7 +443,7 @@ app.post("/api/jobs", (req, res) => {
 // - Does NOT auto-move backward when flags are unchecked
 // - Updates completed_at if status changes to/from complete
 // =====================
-app.patch("/api/jobs/:id", (req, res) => {  
+app.patch("/api/jobs/:id", (req, res) => {
   const jobId = req.params.id;
 
   db.get(`SELECT * FROM jobs WHERE id = ?`, [jobId], (loadErr, existingJob) => {
@@ -555,6 +625,10 @@ app.patch("/api/jobs/:id/flags", (req, res) => {
         if (updateErr) {
           console.error("Error updating job flags:", updateErr.message);
           return res.status(500).json({ error: "Failed to update job flags" });
+        }
+
+        if (this.changes === 0) {
+          return res.status(404).json({ error: "Job not found" });
         }
 
         res.json({
