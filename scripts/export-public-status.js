@@ -1,7 +1,7 @@
 /**
  * File: scripts/export-public-status.js
  * Purpose:
- * - Read safe order status data from the private SQLite DB
+ * - Read public order status data from the private SQLite DB
  * - Map internal statuses to customer-friendly labels
  * - Write a public JSON file into the 843 Teez website repo
  *
@@ -29,7 +29,8 @@ const OUTPUT_PATH = path.join(
   "order-status.json"
 );
 
-const INCLUDE_COMPLETE = String(process.env.INCLUDE_COMPLETE || "false").toLowerCase() === "true";
+const INCLUDE_COMPLETE =
+  String(process.env.INCLUDE_COMPLETE || "false").toLowerCase() === "true";
 
 function mapStatusToPublicLabel(status) {
   const statusMap = {
@@ -43,26 +44,14 @@ function mapStatusToPublicLabel(status) {
   return statusMap[status] || "Order Received";
 }
 
-function getSafeCustomerName(fullName) {
-  const trimmed = String(fullName || "").trim();
+function getPublicCustomerName(customerName) {
+  const trimmed = String(customerName || "").trim();
 
   if (!trimmed) {
     return "Customer";
   }
 
-  const parts = trimmed.split(/\s+/).filter(Boolean);
-
-  if (parts.length >= 2) {
-    return parts[parts.length - 1];
-  }
-
-  const first = parts[0];
-
-  if (!first) {
-    return "Customer";
-  }
-
-  return `${first.charAt(0).toUpperCase()}.`;
+  return trimmed;
 }
 
 function ensureDirectoryExists(filePath) {
@@ -78,14 +67,17 @@ function sortOrdersForPublicBoard(orders) {
     const orderA = String(a.orderNumber || "");
     const orderB = String(b.orderNumber || "");
 
-    return orderA.localeCompare(orderB, undefined, { numeric: true, sensitivity: "base" });
+    return orderA.localeCompare(orderB, undefined, {
+      numeric: true,
+      sensitivity: "base",
+    });
   });
 }
 
 function buildExportPayload(rows) {
   const exportedOrders = rows.map((job) => ({
     orderNumber: String(job.order_number || "").trim(),
-    customer: getSafeCustomerName(job.customer_name),
+    customer: getPublicCustomerName(job.customer_name),
     status: mapStatusToPublicLabel(job.status),
   }));
 
