@@ -537,7 +537,71 @@ function syncModalCopy() {
     }
   }
 }
+// =====================
+// Production Counter Helpers
+// Purpose:
+// - Track done/remaining shirts locally (no DB)
+// - Persist via localStorage per job
+// =====================
+function getCounterKey(jobId) {
+  return `job-counter-${jobId}`;
+}
 
+function getSavedCounter(job) {
+  const key = getCounterKey(job.id);
+  const total = Number(job.quantity) || 0;
+  const saved = localStorage.getItem(key);
+
+  if (saved !== null) {
+    const parsed = Number(saved);
+    if (!Number.isNaN(parsed)) {
+      return Math.max(0, Math.min(total, parsed));
+    }
+  }
+
+  return total;
+}
+
+function saveCounter(jobId, value) {
+  const key = getCounterKey(jobId);
+  localStorage.setItem(key, String(value));
+}
+
+function clearCounter(jobId) {
+  const key = getCounterKey(jobId);
+  localStorage.removeItem(key);
+}
+
+let counterAudioContext = null;
+
+function playCounterClick() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+
+    if (!counterAudioContext) {
+      counterAudioContext = new AudioCtx();
+    }
+
+    const ctx = counterAudioContext;
+    const oscillator = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+
+    oscillator.type = "square";
+    oscillator.frequency.setValueAtTime(880, ctx.currentTime);
+
+    gainNode.gain.setValueAtTime(0.03, ctx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.06);
+
+    oscillator.connect(gainNode);
+    gainNode.connect(ctx.destination);
+
+    oscillator.start();
+    oscillator.stop(ctx.currentTime + 0.06);
+  } catch (error) {
+    console.warn("Counter click audio unavailable:", error);
+  }
+}
 // =====================
 // Theme Toggle
 // Purpose:
@@ -929,6 +993,19 @@ function createJobCard(job) {
   const canMoveLeft = currentIndex > 0;
   const canMoveRight = currentIndex < STATUSES.length - 1;
 
+  // =====================
+// Production Counter Setup
+// =====================
+let remaining = null;
+let done = null;
+
+if (job.status === "at_the_plate") {
+  const total = Number(job.quantity) || 0;
+  remaining = getSavedCounter(job);
+  done = Math.max(0, total - remaining);
+} else {
+  clearCounter(job.id);
+}
   const qtyPill = buildMetaPill("Qty", job.quantity || 0);
   const printTypePill = job.print_type
     ? buildMetaPill("Type", formatPrintType(job.print_type))
@@ -984,6 +1061,68 @@ function createJobCard(job) {
 
     <h3>${escapeHtml(job.customer_name)}</h3>
 
+${
+  job.status === "at_the_plate"
+    ? `
+      <div class="production-counter ${remaining === 0 ? "counter-complete" : ""}">
+        <div class="counter-row">
+          <span class="counter-done ${remaining === 0 ? "counter-done-complete" : ""}">
+            Done: ${done} / ${job.quantity}
+          </span>
+        </div>
+
+        <div class="counter-controls">
+          <button
+            type="button"
+            class="counter-btn minus"
+            style="min-width:52px; min-height:52px; font-size:1.4rem; font-weight:700;"
+          >
+            -
+          </button>
+
+          <span
+            class="counter-remaining ${remaining === 0 ? "counter-remaining-complete" : ""}"
+            style="display:inline-flex; align-items:center; justify-content:center; min-width:64px; min-height:52px; font-size:1.35rem; font-weight:700;"
+          >
+            ${remaining}
+          </span>
+
+          <button
+            type="button"
+            class="counter-btn plus"
+            style="min-width:52px; min-height:52px; font-size:1.4rem; font-weight:700;"
+          >
+            +
+          </button>
+
+          <button
+            type="button"
+            class="counter-reset"
+            style="min-height:52px; padding:0 14px; font-size:1rem; font-weight:600;"
+          >
+            Reset
+          </button>
+        </div>
+
+        ${
+          remaining === 0
+            ? `
+              <div class="counter-ready-row" style="margin-top:10px;">
+                <button
+                  type="button"
+                  class="counter-mark-ready-btn"
+                  style="width:100%; min-height:52px; font-size:1rem; font-weight:700;"
+                >
+                  Mark Ready
+                </button>
+              </div>
+            `
+            : ""
+        }
+      </div>
+    `
+    : ""
+}
     ${
       quickFlags.length
         ? `<div class="quick-flags">
@@ -1048,7 +1187,127 @@ function createJobCard(job) {
   const compactMoveRightBtn = article.querySelector(".move-right-compact");
   const quickFlagButtons = article.querySelectorAll(".quick-flag-btn");
   const editJobBtn = article.querySelector(".edit-job-btn");
+// =====================
+// Counter Event Handling
+// =====================
+if (job.status === "at_the_plate") {
+  const counterWrap = article.querySelector(".production-counter");
+  const minusBtn = article.querySelector(".counter-btn.minus");
+  const plusBtn = article.querySelector(".counter-btn.plus");
+  const resetBtn = article.querySelector(".counter-reset");
+  const markReadyBtn = article.querySelector(".counter-mark-ready-btn");
+  const remainingEl = article.querySelector(".counter-remaining");
+  const doneEl = article.querySelector(".counter-done");
 
+  const total = Number(job.quantity) || 0;
+
+  function applyCompleteVisuals(remainingVal) {
+    const isComplete = remainingVal === 0;
+
+    counterWrap?.classList.toggle("counter-complete", isComplete);
+    remainingEl?.classList.toggle("counter-remaining-complete", isComplete);
+    doneEl?.classList.toggle("counter-done-complete", isComplete);
+
+    if (counterWrap) {
+      counterWrap.style.border = isComplete ? "2px solid #22c55e" : "";
+      counterWrap.style.boxShadow = isComplete
+        ? "0 0 0 3px rgba(34, 197, 94, 0.18)"
+        : "";
+      counterWrap.style.borderRadius = "12px";
+      counterWrap.style.padding = "10px";
+    }
+
+    if (remainingEl) {
+      remainingEl.style.color = isComplete ? "#15803d" : "";
+      remainingEl.style.background = isComplete ? "rgba(34, 197, 94, 0.12)" : "";
+      remainingEl.style.borderRadius = "10px";
+    }
+
+    if (doneEl) {
+      doneEl.style.color = isComplete ? "#15803d" : "";
+      doneEl.style.fontWeight = "700";
+    }
+  }
+
+  function renderReadyButton(remainingVal) {
+    const existingBtn = article.querySelector(".counter-mark-ready-btn");
+    const existingRow = existingBtn?.closest(".counter-ready-row");
+    const isComplete = remainingVal === 0;
+
+    if (isComplete && !existingBtn) {
+      const row = document.createElement("div");
+      row.className = "counter-ready-row";
+      row.style.marginTop = "10px";
+
+      row.innerHTML = `
+        <button
+          type="button"
+          class="counter-mark-ready-btn"
+          style="width:100%; min-height:52px; font-size:1rem; font-weight:700;"
+        >
+          Mark Ready
+        </button>
+      `;
+
+      counterWrap?.appendChild(row);
+
+      const newReadyBtn = row.querySelector(".counter-mark-ready-btn");
+      newReadyBtn?.addEventListener("click", handleMarkReady);
+    }
+
+    if (!isComplete && existingRow) {
+      existingRow.remove();
+    }
+  }
+
+  function updateDisplay(value) {
+    const remainingVal = Math.max(0, Math.min(total, value));
+    const doneVal = total - remainingVal;
+
+    remainingEl.textContent = remainingVal;
+    doneEl.textContent = `Done: ${doneVal} / ${total}`;
+
+    saveCounter(job.id, remainingVal);
+    applyCompleteVisuals(remainingVal);
+    renderReadyButton(remainingVal);
+  }
+
+  async function handleMarkReady() {
+    try {
+      const readyButton = article.querySelector(".counter-mark-ready-btn");
+      if (readyButton) readyButton.disabled = true;
+
+      await updateJobStatus(job.id, "ready");
+      clearCounter(job.id);
+      await loadJobs();
+      scrollToColumn("ready");
+    } catch (error) {
+      console.error(error);
+      showApiError("Could not mark job ready", error);
+    }
+  }
+
+  minusBtn?.addEventListener("click", () => {
+    const current = getSavedCounter(job);
+    updateDisplay(current - 1);
+    playCounterClick();
+  });
+
+  plusBtn?.addEventListener("click", () => {
+    const current = getSavedCounter(job);
+    updateDisplay(current + 1);
+    playCounterClick();
+  });
+
+  resetBtn?.addEventListener("click", () => {
+    updateDisplay(total);
+    playCounterClick();
+  });
+
+  markReadyBtn?.addEventListener("click", handleMarkReady);
+
+  applyCompleteVisuals(remaining);
+}
   toggleBtn.addEventListener("click", () => {
     const isHidden = detailsEl.classList.toggle("hidden");
     toggleBtn.textContent = isHidden ? "Details" : "Hide";
