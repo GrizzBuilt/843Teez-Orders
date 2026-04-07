@@ -10,7 +10,7 @@
  *
  * Optional environment variables:
  *   WEBSITE_REPO_PATH=/workspaces/843teez-website
- *   INCLUDE_COMPLETE=true
+ *   RECENT_COMPLETE_LIMIT=12
  */
 
 const fs = require("fs");
@@ -29,8 +29,10 @@ const OUTPUT_PATH = path.join(
   "order-status.json"
 );
 
-const INCLUDE_COMPLETE =
-  String(process.env.INCLUDE_COMPLETE || "false").toLowerCase() === "true";
+const RECENT_COMPLETE_LIMIT = Math.max(
+  1,
+  Number.parseInt(process.env.RECENT_COMPLETE_LIMIT || "12", 10) || 12
+);
 
 function mapStatusToPublicLabel(status) {
   const statusMap = {
@@ -46,12 +48,7 @@ function mapStatusToPublicLabel(status) {
 
 function getPublicCustomerName(customerName) {
   const trimmed = String(customerName || "").trim();
-
-  if (!trimmed) {
-    return "Customer";
-  }
-
-  return trimmed;
+  return trimmed || "Customer";
 }
 
 function ensureDirectoryExists(filePath) {
@@ -74,17 +71,56 @@ function sortOrdersForPublicBoard(orders) {
   });
 }
 
-function buildExportPayload(rows) {
-  const exportedOrders = rows.map((job) => ({
+function getSafeDateValue(value) {
+  if (!value) {
+    return null;
+  }
+
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) ? null : time;
+}
+
+function normalizeJob(job) {
+  return {
     orderNumber: String(job.order_number || "").trim(),
     customer: getPublicCustomerName(job.customer_name),
     status: mapStatusToPublicLabel(job.status),
-  }));
+    createdAt: job.created_at || null,
+    updatedAt: job.updated_at || null,
+    completedAt: job.completed_at || null,
+  };
+}
+
+function buildExportPayload(rows) {
+  const normalizedJobs = rows.map(normalizeJob);
+
+  const activeOrders = normalizedJobs.filter((job) => job.status !== "Completed");
+
+  const recentlyCompleted = normalizedJobs
+    .filter((job) => job.status === "Completed")
+    .sort((a, b) => {
+      const aTime =
+        getSafeDateValue(a.completedAt) ??
+        getSafeDateValue(a.updatedAt) ??
+        getSafeDateValue(a.createdAt) ??
+        0;
+
+      const bTime =
+        getSafeDateValue(b.completedAt) ??
+        getSafeDateValue(b.updatedAt) ??
+        getSafeDateValue(b.createdAt) ??
+        0;
+
+      return bTime - aTime;
+    })
+    .slice(0, RECENT_COMPLETE_LIMIT);
 
   return {
     generatedAt: new Date().toISOString(),
-    count: exportedOrders.length,
-    orders: sortOrdersForPublicBoard(exportedOrders),
+    count: activeOrders.length,
+    completedCount: recentlyCompleted.length,
+    orders: sortOrdersForPublicBoard(activeOrders),
+    recentlyCompleted,
   };
 }
 
@@ -106,22 +142,18 @@ function exportPublicStatus() {
     }
   });
 
-  let sql = `
+  const sql = `
     SELECT
       order_number,
       customer_name,
       status,
-      updated_at,
       created_at,
+      updated_at,
+      completed_at,
       id
     FROM jobs
+    ORDER BY created_at ASC, id ASC
   `;
-
-  if (!INCLUDE_COMPLETE) {
-    sql += ` WHERE status != 'complete' `;
-  }
-
-  sql += ` ORDER BY created_at ASC, id ASC `;
 
   db.all(sql, [], (err, rows) => {
     if (err) {
@@ -134,11 +166,15 @@ function exportPublicStatus() {
       const payload = buildExportPayload(rows);
 
       ensureDirectoryExists(OUTPUT_PATH);
-      fs.writeFileSync(OUTPUT_PATH, JSON.stringify(payload, null, 2) + "\n", "utf8");
+      fs.writeFileSync(
+        OUTPUT_PATH,
+        JSON.stringify(payload, null, 2) + "\n",
+        "utf8"
+      );
 
       console.log("Export complete.");
-      console.log(`Orders exported: ${payload.count}`);
-      console.log(`Include completed: ${INCLUDE_COMPLETE}`);
+      console.log(`Active orders exported: ${payload.count}`);
+      console.log(`Recently completed exported: ${payload.completedCount}`);
       console.log(`Output file: ${OUTPUT_PATH}`);
     } catch (writeErr) {
       console.error("Error writing export file:", writeErr.message);
