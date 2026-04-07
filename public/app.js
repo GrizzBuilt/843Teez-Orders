@@ -362,7 +362,9 @@ let isSavingJob = false;
 let formMode = "create";
 let editingJobId = null;
 let jobsCache = [];
-
+let lastBoardUpdatedAt = null;
+let isPollingBoardUpdates = false;
+const BOARD_REFRESH_INTERVAL_MS = 10000;
 // =====================
 // Helpers
 // =====================
@@ -936,7 +938,13 @@ async function updateJobFlags(jobId, payload) {
 
   return parseApiResponse(response, "Failed to update job flags");
 }
+async function fetchLastUpdated(showComplete) {
+  const response = await fetch(
+    `/api/jobs/last-updated?showComplete=${showComplete}`
+  );
 
+  return parseApiResponse(response, "Failed to fetch last updated timestamp");
+}
 // =====================
 // UI Rendering
 // =====================
@@ -1431,7 +1439,10 @@ async function loadJobs() {
   try {
     const response = await fetch(`/api/jobs?showComplete=${showComplete}`);
     const jobs = await parseApiResponse(response, "Failed to load jobs");
-
+  
+    const lastUpdatedData = await fetchLastUpdated(showComplete);
+    lastBoardUpdatedAt = lastUpdatedData?.lastUpdated || null;
+   
     jobs.sort(compareJobsForBoard);
     jobsCache = jobs;
 
@@ -1452,7 +1463,35 @@ async function loadJobs() {
     console.error("Failed to load jobs:", error);
   }
 }
+async function pollForBoardUpdates() {
+  if (isPollingBoardUpdates || isSavingJob) return;
 
+  const modalIsOpen =
+    modalBackdrop && !modalBackdrop.classList.contains("hidden");
+
+  if (modalIsOpen) return;
+
+  try {
+    isPollingBoardUpdates = true;
+
+    const showComplete = showCompleteToggle.checked;
+    const data = await fetchLastUpdated(showComplete);
+    const newestTimestamp = data?.lastUpdated || null;
+
+    if (lastBoardUpdatedAt == null) {
+      lastBoardUpdatedAt = newestTimestamp;
+      return;
+    }
+
+    if (newestTimestamp && newestTimestamp !== lastBoardUpdatedAt) {
+      await loadJobs();
+    }
+  } catch (error) {
+    console.error("Board auto-refresh check failed:", error);
+  } finally {
+    isPollingBoardUpdates = false;
+  }
+}
 // =====================
 // Save / Update Job
 // =====================
@@ -1626,3 +1665,5 @@ loadSavedTheme();
 
 showCompleteToggle?.addEventListener("change", loadJobs);
 loadJobs();
+
+window.setInterval(pollForBoardUpdates, BOARD_REFRESH_INTERVAL_MS);
