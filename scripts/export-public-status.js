@@ -10,7 +10,7 @@
  *
  * Optional environment variables:
  *   WEBSITE_REPO_PATH=/workspaces/843teez-website
- *   RECENT_COMPLETE_LIMIT=12
+ *   RECENT_COMPLETE_LIMIT=10
  */
 
 const fs = require("fs");
@@ -31,7 +31,7 @@ const OUTPUT_PATH = path.join(
 
 const RECENT_COMPLETE_LIMIT = Math.max(
   1,
-  Number.parseInt(process.env.RECENT_COMPLETE_LIMIT || "12", 10) || 12
+  Number.parseInt(process.env.RECENT_COMPLETE_LIMIT || "10", 10) || 10
 );
 
 function mapStatusToPublicLabel(status) {
@@ -175,6 +175,7 @@ function exportPublicStatus() {
       console.log("Export complete.");
       console.log(`Active orders exported: ${payload.count}`);
       console.log(`Recently completed exported: ${payload.completedCount}`);
+      console.log(`Completed limit: ${RECENT_COMPLETE_LIMIT}`);
       console.log(`Output file: ${OUTPUT_PATH}`);
     } catch (writeErr) {
       console.error("Error writing export file:", writeErr.message);
