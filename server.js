@@ -2,15 +2,6 @@
  * File: server.js
  * Project: 843Teez Orders
  * Purpose: Main Express server, API routes, and SQLite database setup
- * Notes:
- * - Runs on the GrizzBuilt headless PC
- * - Serves both the API and frontend files
- * - Stores production jobs for the 843 Teez shop board
- * - Auto-moves jobs from In the Hole to On Deck when required materials/prep are ready
- * - Aging remains based on created_at
- * - Due date support added for promised job deadlines
- * - Edit Job route added for full board-based job updates
- * - Board refresh support added with /api/jobs/last-updated
  */
 
 // =====================
@@ -653,7 +644,64 @@ app.patch("/api/jobs/:id/flags", (req, res) => {
     );
   });
 });
+// =====================
+// Routes - Update At The Plate Counter
+// Purpose:
+// - Stores remaining count in DB
+// - Used by plus/minus/reset buttons
+// =====================
+app.patch("/api/jobs/:id/at-plate-counter", (req, res) => {
+  const jobId = req.params.id;
+  const requestedRemaining = Number(req.body.remaining);
 
+  if (!Number.isFinite(requestedRemaining)) {
+    return res.status(400).json({ error: "Remaining count is required" });
+  }
+
+  db.get(`SELECT * FROM jobs WHERE id = ?`, [jobId], (loadErr, existingJob) => {
+    if (loadErr) {
+      console.error("Error loading job for counter update:", loadErr.message);
+      return res.status(500).json({ error: "Failed to load job" });
+    }
+
+    if (!existingJob) {
+      return res.status(404).json({ error: "Job not found" });
+    }
+
+    if (existingJob.status !== "at_the_plate") {
+      return res.status(400).json({ error: "Counter only applies to At the Plate jobs" });
+    }
+
+    const total = Number(existingJob.quantity) || 0;
+    const remaining = Math.max(0, Math.min(total, requestedRemaining));
+
+    db.run(
+      `
+        UPDATE jobs
+        SET at_plate_remaining = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `,
+      [remaining, jobId],
+      function (updateErr) {
+        if (updateErr) {
+          console.error("Error updating at plate counter:", updateErr.message);
+          return res.status(500).json({ error: "Failed to update counter" });
+        }
+
+        if (this.changes === 0) {
+          return res.status(404).json({ error: "Job not found" });
+        }
+
+        res.json({
+          ok: true,
+          id: Number(jobId),
+          at_plate_remaining: remaining,
+        });
+      }
+    );
+  });
+});
 // =====================
 // Routes - Update Job Status
 // Purpose:
