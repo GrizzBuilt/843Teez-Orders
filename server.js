@@ -86,6 +86,9 @@ db.serialize(() => {
     const hasDueDate = columns.some((column) => column.name === "due_date");
     const hasUpdatedAt = columns.some((column) => column.name === "updated_at");
     const hasCompletedAt = columns.some((column) => column.name === "completed_at");
+    const hasAtPlateRemaining = columns.some(
+      (column) => column.name === "at_plate_remaining"
+    );
 
     if (!hasDueDate) {
       db.run(`ALTER TABLE jobs ADD COLUMN due_date TEXT`, (alterErr) => {
@@ -130,6 +133,16 @@ db.serialize(() => {
           console.error("Error adding completed_at column:", alterErr.message);
         } else {
           console.log("Added completed_at column to jobs table.");
+        }
+      });
+    }
+
+    if (!hasAtPlateRemaining) {
+      db.run(`ALTER TABLE jobs ADD COLUMN at_plate_remaining INTEGER`, (alterErr) => {
+        if (alterErr) {
+          console.error("Error adding at_plate_remaining column:", alterErr.message);
+        } else {
+          console.log("Added at_plate_remaining column to jobs table.");
         }
       });
     }
