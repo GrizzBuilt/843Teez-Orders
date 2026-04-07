@@ -2,22 +2,7 @@
  * File: public/app.js
  * Project: 843Teez Orders
  * Purpose: Frontend logic for loading jobs, rendering the board, and handling status movement
- * Notes:
- * - Ultra-compact cards
- * - Expandable details
- * - Tiny quick-move arrows always visible
- * - Aging indicator uses business days + quantity/workflow logic
- * - Ready and Complete jobs do not age visually
- * - Aging badge is color-coded
- * - Stuck job detection added
- * - Quick flags added to compact card
- * - Mobile + tablet + desktop friendly
- * - New Order modal improved for mobile-first form use
- * - Due date support added while keeping aging based on created_at
- * - Jobs sort by due-date urgency within each column
- * - Edit Job support added using the same modal/form
- * - Dark mode toggle added with saved preference
- */
+  */
 
 // =====================
 // Constants
@@ -540,36 +525,28 @@ function syncModalCopy() {
 // =====================
 // Production Counter Helpers
 // Purpose:
-// - Track done/remaining shirts locally (no DB)
-// - Persist via localStorage per job
+// - Track done/remaining shirts from DB-backed field
+// - Fallback safely to quantity if value is missing
 // =====================
-function getCounterKey(jobId) {
-  return `job-counter-${jobId}`;
-}
-
 function getSavedCounter(job) {
-  const key = getCounterKey(job.id);
   const total = Number(job.quantity) || 0;
-  const saved = localStorage.getItem(key);
+  const saved = Number(job.at_plate_remaining);
 
-  if (saved !== null) {
-    const parsed = Number(saved);
-    if (!Number.isNaN(parsed)) {
-      return Math.max(0, Math.min(total, parsed));
-    }
+  if (!Number.isNaN(saved) && job.at_plate_remaining != null) {
+    return Math.max(0, Math.min(total, saved));
   }
 
   return total;
 }
 
-function saveCounter(jobId, value) {
-  const key = getCounterKey(jobId);
-  localStorage.setItem(key, String(value));
-}
+async function updateAtPlateCounter(jobId, remaining) {
+  const response = await fetch(`/api/jobs/${jobId}/at-plate-counter`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ remaining }),
+  });
 
-function clearCounter(jobId) {
-  const key = getCounterKey(jobId);
-  localStorage.removeItem(key);
+  return parseApiResponse(response, "Failed to update At the Plate counter");
 }
 
 let counterAudioContext = null;
@@ -1003,8 +980,6 @@ if (job.status === "at_the_plate") {
   const total = Number(job.quantity) || 0;
   remaining = getSavedCounter(job);
   done = Math.max(0, total - remaining);
-} else {
-  clearCounter(job.id);
 }
   const qtyPill = buildMetaPill("Qty", job.quantity || 0);
   const printTypePill = job.print_type
@@ -1260,49 +1235,92 @@ if (job.status === "at_the_plate") {
     }
   }
 
-  function updateDisplay(value) {
-    const remainingVal = Math.max(0, Math.min(total, value));
-    const doneVal = total - remainingVal;
+async function updateDisplay(value) {
+  const remainingVal = Math.max(0, Math.min(total, value));
+  const doneVal = total - remainingVal;
 
-    remainingEl.textContent = remainingVal;
-    doneEl.textContent = `Done: ${doneVal} / ${total}`;
+  remainingEl.textContent = remainingVal;
+  doneEl.textContent = `Done: ${doneVal} / ${total}`;
 
-    saveCounter(job.id, remainingVal);
-    applyCompleteVisuals(remainingVal);
-    renderReadyButton(remainingVal);
-  }
+  applyCompleteVisuals(remainingVal);
+  renderReadyButton(remainingVal);
+
+  await updateAtPlateCounter(job.id, remainingVal);
+  job.at_plate_remaining = remainingVal;
+}
 
   async function handleMarkReady() {
     try {
       const readyButton = article.querySelector(".counter-mark-ready-btn");
       if (readyButton) readyButton.disabled = true;
 
-      await updateJobStatus(job.id, "ready");
-      clearCounter(job.id);
-      await loadJobs();
-      scrollToColumn("ready");
+  await updateJobStatus(job.id, "ready");
+await loadJobs();
+scrollToColumn("ready");
     } catch (error) {
       console.error(error);
       showApiError("Could not mark job ready", error);
     }
   }
 
-  minusBtn?.addEventListener("click", () => {
-    const current = getSavedCounter(job);
-    updateDisplay(current - 1);
-    playCounterClick();
-  });
+minusBtn?.addEventListener("click", async () => {
+  try {
+    minusBtn.disabled = true;
+    plusBtn.disabled = true;
+    resetBtn.disabled = true;
 
-  plusBtn?.addEventListener("click", () => {
     const current = getSavedCounter(job);
-    updateDisplay(current + 1);
+    await updateDisplay(current - 1);
     playCounterClick();
-  });
+  } catch (error) {
+    console.error(error);
+    showApiError("Could not update counter", error);
+    await loadJobs();
+  } finally {
+    minusBtn.disabled = false;
+    plusBtn.disabled = false;
+    resetBtn.disabled = false;
+  }
+});
 
-  resetBtn?.addEventListener("click", () => {
-    updateDisplay(total);
+plusBtn?.addEventListener("click", async () => {
+  try {
+    minusBtn.disabled = true;
+    plusBtn.disabled = true;
+    resetBtn.disabled = true;
+
+    const current = getSavedCounter(job);
+    await updateDisplay(current + 1);
     playCounterClick();
-  });
+  } catch (error) {
+    console.error(error);
+    showApiError("Could not update counter", error);
+    await loadJobs();
+  } finally {
+    minusBtn.disabled = false;
+    plusBtn.disabled = false;
+    resetBtn.disabled = false;
+  }
+});
+
+resetBtn?.addEventListener("click", async () => {
+  try {
+    minusBtn.disabled = true;
+    plusBtn.disabled = true;
+    resetBtn.disabled = true;
+
+    await updateDisplay(total);
+    playCounterClick();
+  } catch (error) {
+    console.error(error);
+    showApiError("Could not reset counter", error);
+    await loadJobs();
+  } finally {
+    minusBtn.disabled = false;
+    plusBtn.disabled = false;
+    resetBtn.disabled = false;
+  }
+});
 
   markReadyBtn?.addEventListener("click", handleMarkReady);
 
