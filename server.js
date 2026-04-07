@@ -659,6 +659,8 @@ app.patch("/api/jobs/:id/flags", (req, res) => {
 // Purpose:
 // - Moves a job left/right across board columns
 // - Sets completed_at when moved to complete
+// - Initializes at_plate_remaining from quantity
+//   when first moved into At the Plate
 // =====================
 app.patch("/api/jobs/:id/status", (req, res) => {
   const jobId = req.params.id;
@@ -685,15 +687,22 @@ app.patch("/api/jobs/:id/status", (req, res) => {
       existingJob.completed_at
     );
 
+    let atPlateRemaining = existingJob.at_plate_remaining;
+
+    if (status === "at_the_plate" && atPlateRemaining == null) {
+      atPlateRemaining = Math.max(0, Number(existingJob.quantity) || 0);
+    }
+
     db.run(
       `
         UPDATE jobs
         SET status = ?,
+            at_plate_remaining = ?,
             updated_at = CURRENT_TIMESTAMP,
             completed_at = ?
         WHERE id = ?
       `,
-      [status, completedAt, jobId],
+      [status, atPlateRemaining, completedAt, jobId],
       function (err) {
         if (err) {
           console.error("Error updating job status:", err.message);
