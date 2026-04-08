@@ -309,6 +309,8 @@ const bodyEl = document.body;
 const boardEl = document.querySelector(".board");
 const showCompleteToggle = document.getElementById("show-complete-toggle");
 const completeColumn = document.getElementById("complete-column");
+const toggleCompleteBtn = document.getElementById("toggle-complete-btn");
+const completeCardList = document.getElementById("complete-card-list");
 
 const newOrderBtn = document.getElementById("new-order-btn");
 const themeToggleBtn = document.getElementById("theme-toggle-btn");
@@ -701,7 +703,13 @@ function formatPrintType(printType) {
   if (!printType) return "";
   return printType;
 }
+function syncCompleteCollapseUi() {
+  if (!toggleCompleteBtn || !completeCardList) return;
 
+  const isHidden = completeCardList.classList.contains("hidden");
+  toggleCompleteBtn.textContent = isHidden ? "Show" : "Hide";
+  toggleCompleteBtn.setAttribute("aria-expanded", String(!isHidden));
+}
 function syncPrintTypeSections() {
   const type = normalizePrintType(printTypeSelect?.value);
 
@@ -1427,9 +1435,13 @@ function updateColumnCounts() {
 async function loadJobs() {
   const showComplete = showCompleteToggle.checked;
 
-  if (completeColumn) {
-    completeColumn.hidden = !showComplete;
-  }
+if (completeColumn) {
+  completeColumn.hidden = !showComplete;
+}
+
+if (completeCardList && showComplete) {
+  completeCardList.classList.add("hidden");
+}
 
   boardEl?.classList.toggle("show-complete", showComplete);
 
@@ -1458,6 +1470,7 @@ async function loadJobs() {
     });
 
     updateColumnCounts();
+    syncCompleteCollapseUi();
   } catch (error) {
     console.error("Failed to load jobs:", error);
   }
@@ -1609,7 +1622,12 @@ if (modalBackdrop) {
 // Modal Events
 // =====================
 newOrderBtn?.addEventListener("click", openModal);
+toggleCompleteBtn?.addEventListener("click", () => {
+  if (!completeCardList) return;
 
+  completeCardList.classList.toggle("hidden");
+  syncCompleteCollapseUi();
+});
 themeToggleBtn?.addEventListener("click", () => {
   const isDark = bodyEl.classList.contains("dark-mode");
   const nextTheme = isDark ? "light" : "dark";
