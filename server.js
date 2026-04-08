@@ -62,6 +62,25 @@ db.serialize(() => {
     )
   `);
 
+  db.run(`
+    CREATE TABLE IF NOT EXISTS counters (
+      name TEXT PRIMARY KEY,
+      value INTEGER NOT NULL DEFAULT 0
+    )
+  `);
+
+  db.run(
+    `
+      INSERT OR IGNORE INTO counters (name, value)
+      VALUES ('order_2026', 47)
+    `,
+    (err) => {
+      if (err) {
+        console.error("Error seeding 2026 order counter:", err.message);
+      }
+    }
+  );
+
   // =====================
   // Database Migration - Safe Column Adds
   // Purpose:
@@ -146,6 +165,94 @@ db.serialize(() => {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
+
+// =====================
+// Helpers - Order Number Generator
+// Purpose:
+// - Creates yearly order numbers like 843-2026-0048
+// - Uses counters table so numbering is persistent
+// - Seeds 2026 at 47 so next created order is 843-2026-0048
+// =====================
+function getOrderCounterName(year) {
+  return `order_${year}`;
+}
+
+function getOrderCounterSeedValue(year) {
+  return Number(year) === 2026 ? 47 : 0;
+}
+
+function formatOrderNumber(year, sequence) {
+  return `843-${year}-${String(sequence).padStart(4, "0")}`;
+}
+
+function getNextOrderNumber(callback) {
+  const year = new Date().getFullYear();
+  const counterName = getOrderCounterName(year);
+  const seedValue = getOrderCounterSeedValue(year);
+
+  db.serialize(() => {
+    db.run("BEGIN IMMEDIATE TRANSACTION", (beginErr) => {
+      if (beginErr) {
+        return callback(beginErr);
+      }
+
+      db.run(
+        `
+          INSERT OR IGNORE INTO counters (name, value)
+          VALUES (?, ?)
+        `,
+        [counterName, seedValue],
+        (insertErr) => {
+          if (insertErr) {
+            return db.run("ROLLBACK", () => callback(insertErr));
+          }
+
+          db.run(
+            `
+              UPDATE counters
+              SET value = value + 1
+              WHERE name = ?
+            `,
+            [counterName],
+            (updateErr) => {
+              if (updateErr) {
+                return db.run("ROLLBACK", () => callback(updateErr));
+              }
+
+              db.get(
+                `
+                  SELECT value
+                  FROM counters
+                  WHERE name = ?
+                `,
+                [counterName],
+                (selectErr, row) => {
+                  if (selectErr) {
+                    return db.run("ROLLBACK", () => callback(selectErr));
+                  }
+
+                  if (!row) {
+                    return db.run("ROLLBACK", () =>
+                      callback(new Error("Failed to load updated order counter"))
+                    );
+                  }
+
+                  db.run("COMMIT", (commitErr) => {
+                    if (commitErr) {
+                      return db.run("ROLLBACK", () => callback(commitErr));
+                    }
+
+                    return callback(null, formatOrderNumber(year, row.value));
+                  });
+                }
+              );
+            }
+          );
+        }
+      );
+    });
+  });
+}
 
 // =====================
 // Helpers - Auto Move Logic
@@ -368,75 +475,90 @@ app.get("/api/jobs/last-updated", (req, res) => {
 // - Defaults new jobs to In the Hole unless another status is provided
 // - Keeps aging based on created_at
 // - Stores optional due_date for promised deadline tracking
+// - Auto-generates order_number if not provided
 // =====================
 app.post("/api/jobs", (req, res) => {
   const normalizedJob = buildNormalizedJobPayload(req.body, {
     defaultStatus: "in_the_hole",
   });
 
-  if (!normalizedJob.order_number || !normalizedJob.customer_name) {
-    return res
-      .status(400)
-      .json({ error: "Order number and customer name are required" });
+  if (!normalizedJob.customer_name) {
+    return res.status(400).json({ error: "Customer name is required" });
   }
 
-  const completedAt =
-    normalizedJob.status === "complete" ? new Date().toISOString() : null;
+  const createJobWithOrderNumber = (orderNumber) => {
+    const completedAt =
+      normalizedJob.status === "complete" ? new Date().toISOString() : null;
 
-  db.run(
-    `
-      INSERT INTO jobs (
-        order_number,
-        customer_name,
-        items_summary,
-        quantity,
-        print_type,
-        status,
-        blanks_ordered,
-        blanks_received,
-        dtf_source,
-        dtf_ready,
-        screens_made,
-        ink_on_hand,
-        ink_ordered,
-        ready_for_pickup,
-        notes,
-        due_date,
-        completed_at
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `,
-    [
-      normalizedJob.order_number,
-      normalizedJob.customer_name,
-      normalizedJob.items_summary,
-      normalizedJob.quantity,
-      normalizedJob.print_type,
-      normalizedJob.status,
-      normalizedJob.blanks_ordered,
-      normalizedJob.blanks_received,
-      normalizedJob.dtf_source,
-      normalizedJob.dtf_ready,
-      normalizedJob.screens_made,
-      normalizedJob.ink_on_hand,
-      normalizedJob.ink_ordered,
-      normalizedJob.ready_for_pickup,
-      normalizedJob.notes,
-      normalizedJob.due_date,
-      completedAt,
-    ],
-    function (err) {
-      if (err) {
-        console.error("Error creating job:", err.message);
-        return res.status(500).json({ error: "Failed to create job" });
+    db.run(
+      `
+        INSERT INTO jobs (
+          order_number,
+          customer_name,
+          items_summary,
+          quantity,
+          print_type,
+          status,
+          blanks_ordered,
+          blanks_received,
+          dtf_source,
+          dtf_ready,
+          screens_made,
+          ink_on_hand,
+          ink_ordered,
+          ready_for_pickup,
+          notes,
+          due_date,
+          completed_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        orderNumber,
+        normalizedJob.customer_name,
+        normalizedJob.items_summary,
+        normalizedJob.quantity,
+        normalizedJob.print_type,
+        normalizedJob.status,
+        normalizedJob.blanks_ordered,
+        normalizedJob.blanks_received,
+        normalizedJob.dtf_source,
+        normalizedJob.dtf_ready,
+        normalizedJob.screens_made,
+        normalizedJob.ink_on_hand,
+        normalizedJob.ink_ordered,
+        normalizedJob.ready_for_pickup,
+        normalizedJob.notes,
+        normalizedJob.due_date,
+        completedAt,
+      ],
+      function (err) {
+        if (err) {
+          console.error("Error creating job:", err.message);
+          return res.status(500).json({ error: "Failed to create job" });
+        }
+
+        res.status(201).json({
+          ok: true,
+          id: this.lastID,
+          order_number: orderNumber,
+        });
       }
+    );
+  };
 
-      res.status(201).json({
-        ok: true,
-        id: this.lastID,
-      });
+  if (normalizedJob.order_number) {
+    return createJobWithOrderNumber(normalizedJob.order_number);
+  }
+
+  getNextOrderNumber((orderErr, generatedOrderNumber) => {
+    if (orderErr) {
+      console.error("Error generating order number:", orderErr.message);
+      return res.status(500).json({ error: "Failed to generate order number" });
     }
-  );
+
+    createJobWithOrderNumber(generatedOrderNumber);
+  });
 });
 
 // =====================
@@ -644,6 +766,7 @@ app.patch("/api/jobs/:id/flags", (req, res) => {
     );
   });
 });
+
 // =====================
 // Routes - Update At The Plate Counter
 // Purpose:
@@ -702,6 +825,7 @@ app.patch("/api/jobs/:id/at-plate-counter", (req, res) => {
     );
   });
 });
+
 // =====================
 // Routes - Update Job Status
 // Purpose:
