@@ -80,13 +80,26 @@
         <div class="card-list"></div>
       </section>
 
-      <section class="column" data-status="complete" id="complete-column" hidden>
-        <div class="column-header">
-          <h2>Complete</h2>
-          <span class="count">0</span>
-        </div>
-        <div class="card-list"></div>
-      </section>
+  <section class="column" data-status="complete" id="complete-column" hidden>
+  <div class="column-header">
+    <div class="column-header-main">
+      <h2>Complete</h2>
+      <span class="count">0</span>
+    </div>
+
+    <button
+      type="button"
+      class="collapse-btn"
+      id="toggle-complete-btn"
+      aria-expanded="false"
+      aria-controls="complete-card-list"
+    >
+      Show
+    </button>
+  </div>
+
+  <div class="card-list hidden" id="complete-card-list"></div>
+</section>
     </main>
 
     <!-- =====================
