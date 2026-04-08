@@ -620,6 +620,10 @@ function openModal() {
     const firstTarget = orderNumberInput || customerNameInput || modalEl;
     firstTarget?.focus();
   });
+ if (orderNumberInput) {
+  orderNumberInput.value = "";
+  orderNumberInput.placeholder = "Will be generated automatically";
+}
 }
 
 function openEditModal(job) {
@@ -786,14 +790,9 @@ function getFormPayload() {
 function validateNewJobForm() {
   resetFormValidationState();
 
-  const orderNumber = orderNumberInput?.value.trim() || "";
   const customerName = customerNameInput?.value.trim() || "";
   const quantity = Number(quantityInput?.value || 1);
 
-  if (!orderNumber) {
-    markFieldInvalid(orderNumberInput, "Order number is required.");
-    throw new Error("Order number is required");
-  }
 
   if (!customerName) {
     markFieldInvalid(customerNameInput, "Customer name is required.");
