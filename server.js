@@ -977,7 +977,7 @@ async function calculateQuote(input) {
           AND print_type = ?
           AND placement = ?
           AND min_quantity <= ?
-          AND max_quantity >= ?
+          AND (max_quantity IS NULL OR ? <= max_quantity)
         ORDER BY min_quantity DESC
         LIMIT 1
       `,
