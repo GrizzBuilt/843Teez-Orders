@@ -137,7 +137,7 @@ function resetRuleForm() {
   ruleForm?.reset();
   document.getElementById("rule_id").value = "";
   document.getElementById("rule_min_quantity").value = "1";
-  document.getElementById("rule_max_quantity").value = "999999";
+  document.getElementById("rule_max_quantity").value = "";
   document.getElementById("rule_active").checked = true;
   clearError(ruleError);
 }
@@ -163,12 +163,15 @@ function getBlankPayload() {
 
 function getRulePayload() {
   const formData = new FormData(ruleForm);
+  const maxQuantityValue = String(formData.get("max_quantity") || "").trim();
 
   return {
     print_type: String(formData.get("print_type") || "").trim(),
     placement: String(formData.get("placement") || "").trim(),
     min_quantity: Math.max(1, Math.floor(Number(formData.get("min_quantity")) || 1)),
-    max_quantity: Math.max(1, Math.floor(Number(formData.get("max_quantity")) || 999999)),
+    max_quantity: maxQuantityValue
+      ? Math.max(1, Math.floor(Number(maxQuantityValue) || 1))
+      : null,
     setup_fee_cents: inputToCents(formData.get("setup_fee")),
     print_cost_per_shirt_cents: inputToCents(formData.get("print_cost")),
     print_price_per_shirt_cents: inputToCents(formData.get("print_price")),
@@ -191,7 +194,7 @@ function validateRulePayload(payload) {
     throw new Error("Placement is required");
   }
 
-  if (payload.max_quantity < payload.min_quantity) {
+  if (payload.max_quantity !== null && payload.max_quantity < payload.min_quantity) {
     throw new Error("Max quantity must be greater than or equal to min quantity");
   }
 }
@@ -226,7 +229,7 @@ function editRule(ruleId) {
   document.getElementById("rule_print_type").value = rule.print_type || "";
   document.getElementById("rule_placement").value = rule.placement || "";
   document.getElementById("rule_min_quantity").value = rule.min_quantity || 1;
-  document.getElementById("rule_max_quantity").value = rule.max_quantity || 999999;
+  document.getElementById("rule_max_quantity").value = rule.max_quantity ?? "";
   document.getElementById("rule_setup_fee").value = centsToInput(rule.setup_fee_cents);
   document.getElementById("rule_print_cost").value = centsToInput(rule.print_cost_per_shirt_cents);
   document.getElementById("rule_print_price").value = centsToInput(rule.print_price_per_shirt_cents);
@@ -294,12 +297,18 @@ function renderRules() {
 
   ruleList.innerHTML = printRules
     .map(
-      (rule) => `
+      (rule) => {
+        const quantityRange =
+          rule.max_quantity == null
+            ? `${escapeHtml(rule.min_quantity)}+ shirts`
+            : `${escapeHtml(rule.min_quantity)} to ${escapeHtml(rule.max_quantity)} shirts`;
+
+        return `
         <article class="pricing-card">
           <div class="pricing-card-heading">
             <div>
               <h3>${escapeHtml(rule.print_type)} - ${escapeHtml(PLACEMENT_LABELS[rule.placement] || rule.placement)}</h3>
-              <p>${escapeHtml(rule.min_quantity)} to ${escapeHtml(rule.max_quantity)} shirts</p>
+              <p>${quantityRange}</p>
             </div>
             <span class="pricing-pill ${Number(rule.active) === 1 ? "" : "inactive"}">
               ${Number(rule.active) === 1 ? "Active" : "Inactive"}
@@ -317,7 +326,8 @@ function renderRules() {
             </button>
           </div>
         </article>
-      `
+      `;
+      }
     )
     .join("");
 

@@ -103,7 +103,7 @@ db.serialize(() => {
       print_type TEXT NOT NULL,
       placement TEXT NOT NULL,
       min_quantity INTEGER NOT NULL DEFAULT 1,
-      max_quantity INTEGER NOT NULL DEFAULT 999999,
+      max_quantity INTEGER DEFAULT NULL,
       setup_fee_cents INTEGER NOT NULL DEFAULT 0,
       print_cost_per_shirt_cents INTEGER NOT NULL DEFAULT 0,
       print_price_per_shirt_cents INTEGER NOT NULL DEFAULT 0,
@@ -341,6 +341,131 @@ db.serialize(() => {
         }
       });
     }
+  });
+
+  db.all(`PRAGMA table_info(print_pricing_rules)`, [], (pragmaErr, columns) => {
+    if (pragmaErr) {
+      console.error("Error reading print_pricing_rules schema:", pragmaErr.message);
+      return;
+    }
+
+    const maxQuantityColumn = columns.find(
+      (column) => column.name === "max_quantity"
+    );
+
+    if (!maxQuantityColumn || Number(maxQuantityColumn.notnull) !== 1) {
+      return;
+    }
+
+    db.serialize(() => {
+      db.run("BEGIN IMMEDIATE TRANSACTION", (beginErr) => {
+        if (beginErr) {
+          console.error("Error starting print pricing migration:", beginErr.message);
+          return;
+        }
+
+        db.run(`DROP TABLE IF EXISTS print_pricing_rules_next`, (dropNextErr) => {
+          if (dropNextErr) {
+            return db.run("ROLLBACK", () =>
+              console.error("Error clearing print pricing migration table:", dropNextErr.message)
+            );
+          }
+
+          db.run(
+            `
+            CREATE TABLE print_pricing_rules_next (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              print_type TEXT NOT NULL,
+              placement TEXT NOT NULL,
+              min_quantity INTEGER NOT NULL DEFAULT 1,
+              max_quantity INTEGER DEFAULT NULL,
+              setup_fee_cents INTEGER NOT NULL DEFAULT 0,
+              print_cost_per_shirt_cents INTEGER NOT NULL DEFAULT 0,
+              print_price_per_shirt_cents INTEGER NOT NULL DEFAULT 0,
+              active INTEGER NOT NULL DEFAULT 1,
+              created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              UNIQUE(print_type, placement, min_quantity, max_quantity)
+            )
+          `,
+            (createErr) => {
+              if (createErr) {
+                return db.run("ROLLBACK", () =>
+                  console.error("Error creating print pricing migration table:", createErr.message)
+                );
+              }
+
+              db.run(
+                `
+                INSERT INTO print_pricing_rules_next (
+                  id,
+                  print_type,
+                  placement,
+                  min_quantity,
+                  max_quantity,
+                  setup_fee_cents,
+                  print_cost_per_shirt_cents,
+                  print_price_per_shirt_cents,
+                  active,
+                  created_at,
+                  updated_at
+                )
+                SELECT
+                  id,
+                  print_type,
+                  placement,
+                  min_quantity,
+                  max_quantity,
+                  setup_fee_cents,
+                  print_cost_per_shirt_cents,
+                  print_price_per_shirt_cents,
+                  active,
+                  created_at,
+                  updated_at
+                FROM print_pricing_rules
+              `,
+                (copyErr) => {
+                  if (copyErr) {
+                    return db.run("ROLLBACK", () =>
+                      console.error("Error copying print pricing rules:", copyErr.message)
+                    );
+                  }
+
+                  db.run(`DROP TABLE print_pricing_rules`, (dropErr) => {
+                    if (dropErr) {
+                      return db.run("ROLLBACK", () =>
+                        console.error("Error dropping old print pricing table:", dropErr.message)
+                      );
+                    }
+
+                    db.run(
+                      `ALTER TABLE print_pricing_rules_next RENAME TO print_pricing_rules`,
+                      (renameErr) => {
+                        if (renameErr) {
+                          return db.run("ROLLBACK", () =>
+                            console.error("Error renaming print pricing table:", renameErr.message)
+                          );
+                        }
+
+                        db.run("COMMIT", (commitErr) => {
+                          if (commitErr) {
+                            return db.run("ROLLBACK", () =>
+                              console.error("Error committing print pricing migration:", commitErr.message)
+                            );
+                          }
+
+                          console.log("Updated print_pricing_rules to allow open-ended max_quantity.");
+                        });
+                      }
+                    );
+                  });
+                }
+              );
+            }
+          );
+        });
+      });
+    });
   });
 });
 
@@ -687,6 +812,15 @@ function normalizeActive(value) {
 function normalizeQuantityBound(value, fallback) {
   const quantity = Math.floor(Number(value));
   return Number.isFinite(quantity) && quantity > 0 ? quantity : fallback;
+}
+
+function normalizeOptionalQuantityBound(value) {
+  if (value == null || value === "") {
+    return null;
+  }
+
+  const quantity = Math.floor(Number(value));
+  return Number.isFinite(quantity) && quantity > 0 ? quantity : null;
 }
 
 function normalizeQuoteSizeLabel(value) {
@@ -1363,7 +1497,7 @@ app.post("/api/pricing/print-rules", async (req, res) => {
   const printType = normalizePrintType(req.body?.print_type);
   const placement = normalizeQuotePlacement(req.body?.placement);
   const minQuantity = normalizeQuantityBound(req.body?.min_quantity, 1);
-  const maxQuantity = normalizeQuantityBound(req.body?.max_quantity, 999999);
+  const maxQuantity = normalizeOptionalQuantityBound(req.body?.max_quantity);
   const active = normalizeActive(req.body?.active);
 
   if (!printType) {
@@ -1374,7 +1508,7 @@ app.post("/api/pricing/print-rules", async (req, res) => {
     return res.status(400).json({ error: "Placement is required" });
   }
 
-  if (maxQuantity < minQuantity) {
+  if (maxQuantity !== null && maxQuantity < minQuantity) {
     return res.status(400).json({ error: "Max quantity must be greater than min quantity" });
   }
 
@@ -1421,7 +1555,7 @@ app.patch("/api/pricing/print-rules/:id", async (req, res) => {
   const printType = normalizePrintType(req.body?.print_type);
   const placement = normalizeQuotePlacement(req.body?.placement);
   const minQuantity = normalizeQuantityBound(req.body?.min_quantity, 1);
-  const maxQuantity = normalizeQuantityBound(req.body?.max_quantity, 999999);
+  const maxQuantity = normalizeOptionalQuantityBound(req.body?.max_quantity);
   const active = normalizeActive(req.body?.active);
 
   if (!Number.isInteger(ruleId) || ruleId < 1) {
@@ -1436,7 +1570,7 @@ app.patch("/api/pricing/print-rules/:id", async (req, res) => {
     return res.status(400).json({ error: "Placement is required" });
   }
 
-  if (maxQuantity < minQuantity) {
+  if (maxQuantity !== null && maxQuantity < minQuantity) {
     return res.status(400).json({ error: "Max quantity must be greater than min quantity" });
   }
 

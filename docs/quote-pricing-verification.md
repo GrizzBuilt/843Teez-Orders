@@ -6,14 +6,22 @@ Example tier setup for one placement:
 
 | print_type | placement | min_quantity | max_quantity | print_price_per_shirt_cents |
 | --- | --- | ---: | ---: | ---: |
-| DTF | full_front | 1 | 23 | 700 |
-| DTF | full_front | 24 | NULL | 600 |
+| DTF | full_front | 1 | 4 | 2000 |
+| DTF | full_front | 5 | 9 | 1700 |
+| DTF | full_front | 10 | 24 | 1500 |
+| DTF | full_front | 25 | 49 | 1200 |
+| DTF | full_front | 100 | NULL | set actual 100+ price |
+
+Add a separate 50-99 row if that quantity range should be quoted. Without it,
+quotes from 50 through 99 will correctly fail with no matching rule.
 
 Expected behavior:
 
-- A 23-shirt quote using `DTF` + `full_front` uses the `min_quantity = 1` rule.
-- A 24-shirt quote using `DTF` + `full_front` uses the `min_quantity = 24` rule.
-- Any quantity above 24 keeps using the `min_quantity = 24` rule when `max_quantity` is `NULL`.
+- A 4-shirt quote using `DTF` + `full_front` uses the `min_quantity = 1` rule.
+- A 5-shirt quote using `DTF` + `full_front` uses the `min_quantity = 5` rule.
+- A 10-shirt quote using `DTF` + `full_front` uses the `min_quantity = 10` rule.
+- A 25-shirt quote using `DTF` + `full_front` uses the `min_quantity = 25` rule.
+- A 100-shirt quote using `DTF` + `full_front` uses the open-ended `min_quantity = 100` rule when `max_quantity` is `NULL`.
 
 The selected rule is visible in the `/api/quotes/calculate` response at:
 
