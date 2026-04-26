@@ -69,6 +69,110 @@ db.serialize(() => {
     )
   `);
 
+  db.run(`
+    CREATE TABLE IF NOT EXISTS shirt_blanks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      brand TEXT NOT NULL,
+      style_number TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      base_cost_cents INTEGER NOT NULL DEFAULT 0,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(brand, style_number)
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS shirt_blank_size_costs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      shirt_blank_id INTEGER NOT NULL,
+      size_label TEXT NOT NULL,
+      extra_cost_cents INTEGER NOT NULL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(shirt_blank_id, size_label),
+      FOREIGN KEY (shirt_blank_id) REFERENCES shirt_blanks(id)
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS print_pricing_rules (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      print_type TEXT NOT NULL,
+      placement TEXT NOT NULL,
+      min_quantity INTEGER NOT NULL DEFAULT 1,
+      max_quantity INTEGER NOT NULL DEFAULT 999999,
+      setup_fee_cents INTEGER NOT NULL DEFAULT 0,
+      print_cost_per_shirt_cents INTEGER NOT NULL DEFAULT 0,
+      print_price_per_shirt_cents INTEGER NOT NULL DEFAULT 0,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(print_type, placement, min_quantity, max_quantity)
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS quotes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_name TEXT NOT NULL,
+      customer_email TEXT,
+      customer_phone TEXT,
+      status TEXT NOT NULL DEFAULT 'draft',
+      due_date TEXT,
+      notes TEXT,
+      total_quantity INTEGER NOT NULL DEFAULT 0,
+      blank_cost_cents INTEGER NOT NULL DEFAULT 0,
+      print_cost_cents INTEGER NOT NULL DEFAULT 0,
+      setup_fee_cents INTEGER NOT NULL DEFAULT 0,
+      total_price_cents INTEGER NOT NULL DEFAULT 0,
+      price_per_shirt_cents INTEGER NOT NULL DEFAULT 0,
+      profit_cents INTEGER NOT NULL DEFAULT 0,
+      converted_job_id INTEGER,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS quote_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      quote_id INTEGER NOT NULL,
+      shirt_blank_id INTEGER NOT NULL,
+      blank_label TEXT NOT NULL,
+      blank_base_cost_cents INTEGER NOT NULL DEFAULT 0,
+      color TEXT,
+      print_type TEXT NOT NULL,
+      placements_json TEXT NOT NULL DEFAULT '[]',
+      total_quantity INTEGER NOT NULL DEFAULT 0,
+      blank_cost_cents INTEGER NOT NULL DEFAULT 0,
+      print_cost_cents INTEGER NOT NULL DEFAULT 0,
+      setup_fee_cents INTEGER NOT NULL DEFAULT 0,
+      total_price_cents INTEGER NOT NULL DEFAULT 0,
+      price_per_shirt_cents INTEGER NOT NULL DEFAULT 0,
+      profit_cents INTEGER NOT NULL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (quote_id) REFERENCES quotes(id),
+      FOREIGN KEY (shirt_blank_id) REFERENCES shirt_blanks(id)
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS quote_item_sizes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      quote_item_id INTEGER NOT NULL,
+      size_label TEXT NOT NULL,
+      quantity INTEGER NOT NULL DEFAULT 0,
+      blank_extra_cost_cents INTEGER NOT NULL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (quote_item_id) REFERENCES quote_items(id)
+    )
+  `);
+
   db.run(
     `
       INSERT OR IGNORE INTO counters (name, value)
@@ -80,6 +184,87 @@ db.serialize(() => {
       }
     }
   );
+
+  [
+    ["Gildan", "5000", "Heavy Cotton Tee", "Budget-friendly everyday tee", 325],
+    ["Gildan", "64000", "Softstyle Tee", "Softer retail-feel tee", 425],
+    ["Bella+Canvas", "3001", "Unisex Jersey Tee", "Premium retail tee", 625],
+  ].forEach((blank) => {
+    db.run(
+      `
+        INSERT OR IGNORE INTO shirt_blanks (
+          brand,
+          style_number,
+          name,
+          description,
+          base_cost_cents
+        )
+        VALUES (?, ?, ?, ?, ?)
+      `,
+      blank,
+      (err) => {
+        if (err) {
+          console.error("Error seeding shirt blank:", err.message);
+        }
+      }
+    );
+  });
+
+  [
+    ["2XL", 200],
+    ["3XL", 300],
+    ["4XL", 400],
+  ].forEach(([sizeLabel, extraCostCents]) => {
+    db.run(
+      `
+        INSERT OR IGNORE INTO shirt_blank_size_costs (
+          shirt_blank_id,
+          size_label,
+          extra_cost_cents
+        )
+        SELECT id, ?, ?
+        FROM shirt_blanks
+      `,
+      [sizeLabel, extraCostCents],
+      (err) => {
+        if (err) {
+          console.error("Error seeding blank size cost:", err.message);
+        }
+      }
+    );
+  });
+
+  [
+    ["DTF", "left_chest", 1, 999999, 0, 150, 450],
+    ["DTF", "full_front", 1, 999999, 0, 250, 700],
+    ["DTF", "full_back", 1, 999999, 0, 350, 900],
+    ["DTF", "sleeve", 1, 999999, 0, 125, 350],
+    ["Screen Print", "left_chest", 12, 999999, 2500, 75, 250],
+    ["Screen Print", "full_front", 12, 999999, 2500, 125, 400],
+    ["Screen Print", "full_back", 12, 999999, 2500, 175, 500],
+    ["Screen Print", "sleeve", 12, 999999, 1500, 75, 225],
+  ].forEach((rule) => {
+    db.run(
+      `
+        INSERT OR IGNORE INTO print_pricing_rules (
+          print_type,
+          placement,
+          min_quantity,
+          max_quantity,
+          setup_fee_cents,
+          print_cost_per_shirt_cents,
+          print_price_per_shirt_cents
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `,
+      rule,
+      (err) => {
+        if (err) {
+          console.error("Error seeding print pricing rule:", err.message);
+        }
+      }
+    );
+  });
 
   // =====================
   // Database Migration - Safe Column Adds
@@ -402,10 +587,599 @@ function getCompletedAtForStatusChange(newStatus, existingCompletedAt) {
 }
 
 // =====================
+// Helpers - SQLite Promises
+// Purpose:
+// - Keep new quote routes readable
+// - Avoid changing existing job route callbacks
+// =====================
+function dbGet(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.get(sql, params, (err, row) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+
+      resolve(row);
+    });
+  });
+}
+
+function dbAll(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.all(sql, params, (err, rows) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+
+      resolve(rows);
+    });
+  });
+}
+
+function dbRun(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.run(sql, params, function (err) {
+      if (err) {
+        reject(err);
+        return;
+      }
+
+      resolve({
+        lastID: this.lastID,
+        changes: this.changes,
+      });
+    });
+  });
+}
+
+// =====================
+// Helpers - Quotes
+// Purpose:
+// - Calculate quote totals from SQLite-driven blank and print pricing data
+// - Store money as integer cents
+// =====================
+const QUOTE_SIZE_ORDER = [
+  "YS",
+  "YM",
+  "YL",
+  "XS",
+  "S",
+  "M",
+  "L",
+  "XL",
+  "2XL",
+  "3XL",
+  "4XL",
+];
+
+const QUOTE_PLACEMENTS = {
+  left_chest: "Left Chest",
+  full_front: "Full Front",
+  full_back: "Full Back",
+  sleeve: "Sleeve",
+};
+
+function normalizeQuoteStatus(value) {
+  return value === "draft" ? "draft" : "draft";
+}
+
+function normalizeMoneyCents(value) {
+  const cents = Number(value);
+  return Number.isFinite(cents) ? Math.max(0, Math.round(cents)) : 0;
+}
+
+function normalizeQuoteSizes(input) {
+  const sizes = input && typeof input === "object" ? input : {};
+
+  return QUOTE_SIZE_ORDER.map((sizeLabel) => {
+    const quantity = Math.max(0, Math.floor(Number(sizes[sizeLabel]) || 0));
+
+    return {
+      size_label: sizeLabel,
+      quantity,
+    };
+  }).filter((size) => size.quantity > 0);
+}
+
+function normalizeQuotePlacements(input) {
+  const placements = Array.isArray(input) ? input : [];
+
+  return placements
+    .map((placement) => String(placement || "").trim())
+    .filter((placement) => Object.prototype.hasOwnProperty.call(QUOTE_PLACEMENTS, placement));
+}
+
+function getQuoteItemInput(input) {
+  return input?.item && typeof input.item === "object" ? input.item : input || {};
+}
+
+function getBlankLabel(blank) {
+  return `${blank.brand} ${blank.style_number} ${blank.name}`.trim();
+}
+
+async function calculateQuote(input) {
+  const itemInput = getQuoteItemInput(input);
+  const shirtBlankId = Number(itemInput.shirt_blank_id);
+  const printType = normalizePrintType(itemInput.print_type);
+  const placements = normalizeQuotePlacements(itemInput.placements);
+  const sizes = normalizeQuoteSizes(itemInput.sizes);
+  const totalQuantity = sizes.reduce((sum, size) => sum + size.quantity, 0);
+
+  if (!shirtBlankId) {
+    const error = new Error("Shirt blank is required");
+    error.status = 400;
+    throw error;
+  }
+
+  if (!printType) {
+    const error = new Error("Print type is required");
+    error.status = 400;
+    throw error;
+  }
+
+  if (!placements.length) {
+    const error = new Error("At least one print placement is required");
+    error.status = 400;
+    throw error;
+  }
+
+  if (totalQuantity < 1) {
+    const error = new Error("At least one shirt quantity is required");
+    error.status = 400;
+    throw error;
+  }
+
+  const blank = await dbGet(
+    `
+      SELECT *
+      FROM shirt_blanks
+      WHERE id = ?
+        AND active = 1
+    `,
+    [shirtBlankId]
+  );
+
+  if (!blank) {
+    const error = new Error("Shirt blank not found");
+    error.status = 404;
+    throw error;
+  }
+
+  const sizeCosts = await dbAll(
+    `
+      SELECT size_label, extra_cost_cents
+      FROM shirt_blank_size_costs
+      WHERE shirt_blank_id = ?
+    `,
+    [shirtBlankId]
+  );
+
+  const sizeCostMap = new Map(
+    sizeCosts.map((row) => [row.size_label, normalizeMoneyCents(row.extra_cost_cents)])
+  );
+
+  let blankCostCents = 0;
+
+  const calculatedSizes = sizes.map((size) => {
+    const blankExtraCostCents = sizeCostMap.get(size.size_label) || 0;
+    const lineCostCents =
+      (normalizeMoneyCents(blank.base_cost_cents) + blankExtraCostCents) *
+      size.quantity;
+
+    blankCostCents += lineCostCents;
+
+    return {
+      ...size,
+      blank_extra_cost_cents: blankExtraCostCents,
+      line_cost_cents: lineCostCents,
+    };
+  });
+
+  let printCostCents = 0;
+  let setupFeeCents = 0;
+  let printPriceCents = 0;
+  const calculatedPlacements = [];
+
+  for (const placement of placements) {
+    const rule = await dbGet(
+      `
+        SELECT *
+        FROM print_pricing_rules
+        WHERE active = 1
+          AND print_type = ?
+          AND placement = ?
+          AND min_quantity <= ?
+          AND max_quantity >= ?
+        ORDER BY min_quantity DESC
+        LIMIT 1
+      `,
+      [printType, placement, totalQuantity, totalQuantity]
+    );
+
+    if (!rule) {
+      const error = new Error(
+        `No print pricing rule found for ${printType} ${QUOTE_PLACEMENTS[placement]} at quantity ${totalQuantity}`
+      );
+      error.status = 400;
+      throw error;
+    }
+
+    const ruleSetupFeeCents = normalizeMoneyCents(rule.setup_fee_cents);
+    const rulePrintCostCents =
+      normalizeMoneyCents(rule.print_cost_per_shirt_cents) * totalQuantity;
+    const rulePrintPriceCents =
+      ruleSetupFeeCents +
+      normalizeMoneyCents(rule.print_price_per_shirt_cents) * totalQuantity;
+
+    setupFeeCents += ruleSetupFeeCents;
+    printCostCents += rulePrintCostCents;
+    printPriceCents += rulePrintPriceCents;
+
+    calculatedPlacements.push({
+      placement,
+      label: QUOTE_PLACEMENTS[placement],
+      rule_id: rule.id,
+      setup_fee_cents: ruleSetupFeeCents,
+      print_cost_per_shirt_cents: normalizeMoneyCents(rule.print_cost_per_shirt_cents),
+      print_price_per_shirt_cents: normalizeMoneyCents(rule.print_price_per_shirt_cents),
+      print_cost_cents: rulePrintCostCents,
+      print_price_cents: rulePrintPriceCents,
+    });
+  }
+
+  const totalPriceCents = blankCostCents + printPriceCents;
+  const pricePerShirtCents = Math.ceil(totalPriceCents / totalQuantity);
+  const profitCents = totalPriceCents - blankCostCents - printCostCents;
+
+  return {
+    item: {
+      shirt_blank_id: shirtBlankId,
+      blank_label: getBlankLabel(blank),
+      blank_base_cost_cents: normalizeMoneyCents(blank.base_cost_cents),
+      color: String(itemInput.color || "").trim(),
+      print_type: printType,
+      placements,
+      placements_json: JSON.stringify(placements),
+      sizes: calculatedSizes,
+      placement_breakdown: calculatedPlacements,
+      total_quantity: totalQuantity,
+      blank_cost_cents: blankCostCents,
+      print_cost_cents: printCostCents,
+      setup_fee_cents: setupFeeCents,
+      total_price_cents: totalPriceCents,
+      price_per_shirt_cents: pricePerShirtCents,
+      profit_cents: profitCents,
+    },
+    totals: {
+      total_quantity: totalQuantity,
+      blank_cost_cents: blankCostCents,
+      print_cost_cents: printCostCents,
+      setup_fee_cents: setupFeeCents,
+      total_price_cents: totalPriceCents,
+      price_per_shirt_cents: pricePerShirtCents,
+      profit_cents: profitCents,
+    },
+  };
+}
+
+// =====================
 // Routes - Health Check
 // =====================
 app.get("/api/health", (req, res) => {
   res.json({ ok: true });
+});
+
+// =====================
+// Routes - Quote Blank Catalog
+// =====================
+app.get("/api/shirt-blanks", async (req, res) => {
+  try {
+    const blanks = await dbAll(
+      `
+        SELECT *
+        FROM shirt_blanks
+        WHERE active = 1
+        ORDER BY brand ASC, style_number ASC, name ASC
+      `
+    );
+
+    const sizeCosts = await dbAll(
+      `
+        SELECT
+          shirt_blank_id,
+          size_label,
+          extra_cost_cents
+        FROM shirt_blank_size_costs
+        ORDER BY size_label ASC
+      `
+    );
+
+    const sizeCostsByBlank = sizeCosts.reduce((acc, row) => {
+      const blankId = Number(row.shirt_blank_id);
+
+      if (!acc[blankId]) {
+        acc[blankId] = {};
+      }
+
+      acc[blankId][row.size_label] = normalizeMoneyCents(row.extra_cost_cents);
+      return acc;
+    }, {});
+
+    res.json(
+      blanks.map((blank) => ({
+        id: blank.id,
+        brand: blank.brand,
+        style_number: blank.style_number,
+        name: blank.name,
+        description: blank.description,
+        base_cost_cents: normalizeMoneyCents(blank.base_cost_cents),
+        size_costs: sizeCostsByBlank[blank.id] || {},
+      }))
+    );
+  } catch (err) {
+    console.error("Error fetching shirt blanks:", err.message);
+    res.status(500).json({ error: "Failed to fetch shirt blanks" });
+  }
+});
+
+// =====================
+// Routes - Print Pricing Rules
+// =====================
+app.get("/api/print-pricing-rules", async (req, res) => {
+  try {
+    const rows = await dbAll(
+      `
+        SELECT *
+        FROM print_pricing_rules
+        WHERE active = 1
+        ORDER BY print_type ASC, placement ASC, min_quantity ASC
+      `
+    );
+
+    res.json(rows);
+  } catch (err) {
+    console.error("Error fetching print pricing rules:", err.message);
+    res.status(500).json({ error: "Failed to fetch print pricing rules" });
+  }
+});
+
+// =====================
+// Routes - Calculate Quote
+// =====================
+app.post("/api/quotes/calculate", async (req, res) => {
+  try {
+    const calculation = await calculateQuote(req.body);
+    res.json(calculation);
+  } catch (err) {
+    console.error("Error calculating quote:", err.message);
+    res.status(err.status || 500).json({
+      error: err.status ? err.message : "Failed to calculate quote",
+    });
+  }
+});
+
+// =====================
+// Routes - List Quotes
+// =====================
+app.get("/api/quotes", async (req, res) => {
+  try {
+    const rows = await dbAll(
+      `
+        SELECT
+          id,
+          customer_name,
+          customer_email,
+          customer_phone,
+          status,
+          due_date,
+          total_quantity,
+          total_price_cents,
+          price_per_shirt_cents,
+          profit_cents,
+          converted_job_id,
+          created_at,
+          updated_at
+        FROM quotes
+        ORDER BY updated_at DESC, id DESC
+      `
+    );
+
+    res.json(rows);
+  } catch (err) {
+    console.error("Error fetching quotes:", err.message);
+    res.status(500).json({ error: "Failed to fetch quotes" });
+  }
+});
+
+// =====================
+// Routes - Get Quote
+// =====================
+app.get("/api/quotes/:id", async (req, res) => {
+  try {
+    const quoteId = Number(req.params.id);
+    const quote = await dbGet(`SELECT * FROM quotes WHERE id = ?`, [quoteId]);
+
+    if (!quote) {
+      return res.status(404).json({ error: "Quote not found" });
+    }
+
+    const items = await dbAll(`SELECT * FROM quote_items WHERE quote_id = ?`, [
+      quoteId,
+    ]);
+
+    const itemIds = items.map((item) => item.id);
+    let sizeRows = [];
+
+    if (itemIds.length) {
+      const placeholders = itemIds.map(() => "?").join(", ");
+      sizeRows = await dbAll(
+        `
+          SELECT *
+          FROM quote_item_sizes
+          WHERE quote_item_id IN (${placeholders})
+          ORDER BY id ASC
+        `,
+        itemIds
+      );
+    }
+
+    const sizesByItem = sizeRows.reduce((acc, row) => {
+      if (!acc[row.quote_item_id]) {
+        acc[row.quote_item_id] = [];
+      }
+
+      acc[row.quote_item_id].push(row);
+      return acc;
+    }, {});
+
+    res.json({
+      ...quote,
+      items: items.map((item) => ({
+        ...item,
+        placements: JSON.parse(item.placements_json || "[]"),
+        sizes: sizesByItem[item.id] || [],
+      })),
+    });
+  } catch (err) {
+    console.error("Error fetching quote:", err.message);
+    res.status(500).json({ error: "Failed to fetch quote" });
+  }
+});
+
+// =====================
+// Routes - Save Quote Draft
+// =====================
+app.post("/api/quotes", async (req, res) => {
+  const quoteInput = req.body || {};
+  const customerName = String(quoteInput.customer_name || "").trim();
+
+  if (!customerName) {
+    return res.status(400).json({ error: "Customer name is required" });
+  }
+
+  try {
+    const calculation = await calculateQuote(quoteInput);
+    const item = calculation.item;
+    const totals = calculation.totals;
+
+    await dbRun("BEGIN IMMEDIATE TRANSACTION");
+
+    try {
+      const quoteResult = await dbRun(
+        `
+          INSERT INTO quotes (
+            customer_name,
+            customer_email,
+            customer_phone,
+            status,
+            due_date,
+            notes,
+            total_quantity,
+            blank_cost_cents,
+            print_cost_cents,
+            setup_fee_cents,
+            total_price_cents,
+            price_per_shirt_cents,
+            profit_cents
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+        [
+          customerName,
+          String(quoteInput.customer_email || "").trim(),
+          String(quoteInput.customer_phone || "").trim(),
+          normalizeQuoteStatus(quoteInput.status),
+          normalizeDueDate(quoteInput.due_date),
+          String(quoteInput.notes || "").trim(),
+          totals.total_quantity,
+          totals.blank_cost_cents,
+          totals.print_cost_cents,
+          totals.setup_fee_cents,
+          totals.total_price_cents,
+          totals.price_per_shirt_cents,
+          totals.profit_cents,
+        ]
+      );
+
+      const quoteId = quoteResult.lastID;
+      const itemResult = await dbRun(
+        `
+          INSERT INTO quote_items (
+            quote_id,
+            shirt_blank_id,
+            blank_label,
+            blank_base_cost_cents,
+            color,
+            print_type,
+            placements_json,
+            total_quantity,
+            blank_cost_cents,
+            print_cost_cents,
+            setup_fee_cents,
+            total_price_cents,
+            price_per_shirt_cents,
+            profit_cents
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+        [
+          quoteId,
+          item.shirt_blank_id,
+          item.blank_label,
+          item.blank_base_cost_cents,
+          item.color,
+          item.print_type,
+          item.placements_json,
+          item.total_quantity,
+          item.blank_cost_cents,
+          item.print_cost_cents,
+          item.setup_fee_cents,
+          item.total_price_cents,
+          item.price_per_shirt_cents,
+          item.profit_cents,
+        ]
+      );
+
+      for (const size of item.sizes) {
+        await dbRun(
+          `
+            INSERT INTO quote_item_sizes (
+              quote_item_id,
+              size_label,
+              quantity,
+              blank_extra_cost_cents
+            )
+            VALUES (?, ?, ?, ?)
+          `,
+          [
+            itemResult.lastID,
+            size.size_label,
+            size.quantity,
+            size.blank_extra_cost_cents,
+          ]
+        );
+      }
+
+      await dbRun("COMMIT");
+
+      res.status(201).json({
+        ok: true,
+        id: quoteId,
+        status: "draft",
+        totals,
+      });
+    } catch (err) {
+      await dbRun("ROLLBACK");
+      throw err;
+    }
+  } catch (err) {
+    console.error("Error saving quote:", err.message);
+    res.status(err.status || 500).json({
+      error: err.status ? err.message : "Failed to save quote",
+    });
+  }
 });
 
 // =====================
@@ -896,6 +1670,10 @@ app.patch("/api/jobs/:id/status", (req, res) => {
 // =====================
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
+app.get("/quotes", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "quotes.html"));
 });
 
 // =====================

@@ -1,0 +1,201 @@
+<!--
+  File: public/quotes.html
+  Project: 843Teez Orders
+  Purpose: Draft quote builder
+-->
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>843 Teez Quote Builder</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/quotes.css" />
+  </head>
+  <body class="quote-page">
+    <header class="quote-topbar">
+      <div>
+        <h1>Quote Builder</h1>
+        <p class="subtitle">Create draft quotes from blank and print pricing rules.</p>
+      </div>
+
+      <div class="quote-topbar-actions">
+        <a class="secondary-btn quote-link-btn" href="/">Orders</a>
+      </div>
+    </header>
+
+    <main class="quote-layout">
+      <section class="quote-panel">
+        <div class="quote-panel-header">
+          <h2>Draft Quote</h2>
+          <p>Enter customer, blank, print setup, and sizes.</p>
+        </div>
+
+        <form id="quote-form" class="quote-form" novalidate>
+          <div class="quote-section">
+            <h3>Customer</h3>
+
+            <div class="quote-grid">
+              <label class="quote-field">
+                <span>Name</span>
+                <input
+                  type="text"
+                  id="customer_name"
+                  name="customer_name"
+                  autocomplete="name"
+                  required
+                />
+              </label>
+
+              <label class="quote-field">
+                <span>Email</span>
+                <input
+                  type="email"
+                  id="customer_email"
+                  name="customer_email"
+                  autocomplete="email"
+                />
+              </label>
+
+              <label class="quote-field">
+                <span>Phone</span>
+                <input
+                  type="tel"
+                  id="customer_phone"
+                  name="customer_phone"
+                  autocomplete="tel"
+                />
+              </label>
+
+              <label class="quote-field">
+                <span>Due Date</span>
+                <input type="date" id="due_date" name="due_date" />
+              </label>
+            </div>
+          </div>
+
+          <div class="quote-section">
+            <h3>Blank</h3>
+
+            <div class="quote-grid">
+              <label class="quote-field quote-field-wide">
+                <span>Shirt Blank</span>
+                <select id="shirt_blank_id" name="shirt_blank_id" required>
+                  <option value="">Loading blanks...</option>
+                </select>
+              </label>
+
+              <label class="quote-field">
+                <span>Color</span>
+                <input
+                  type="text"
+                  id="color"
+                  name="color"
+                  placeholder="Black, white, safety green..."
+                />
+              </label>
+            </div>
+          </div>
+
+          <div class="quote-section">
+            <h3>Print</h3>
+
+            <div class="quote-grid">
+              <label class="quote-field">
+                <span>Print Type</span>
+                <select id="print_type" name="print_type" required>
+                  <option value="">Select one</option>
+                  <option value="DTF">DTF</option>
+                  <option value="Screen Print">Screen Print</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="quote-checkboxes" aria-label="Print placements">
+              <label>
+                <input type="checkbox" name="placements" value="left_chest" />
+                <span>Left Chest</span>
+              </label>
+              <label>
+                <input type="checkbox" name="placements" value="full_front" />
+                <span>Full Front</span>
+              </label>
+              <label>
+                <input type="checkbox" name="placements" value="full_back" />
+                <span>Full Back</span>
+              </label>
+              <label>
+                <input type="checkbox" name="placements" value="sleeve" />
+                <span>Sleeve</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="quote-section">
+            <div class="quote-section-heading-row">
+              <h3>Size Quantities</h3>
+              <span id="quantity-total" class="quote-count-pill">0 total</span>
+            </div>
+
+            <div class="size-grid" id="size-grid"></div>
+          </div>
+
+          <div class="quote-section">
+            <h3>Notes</h3>
+
+            <label class="quote-field">
+              <span class="sr-only">Notes</span>
+              <textarea
+                id="notes"
+                name="notes"
+                rows="4"
+                placeholder="Artwork notes, deadline details, customer preferences..."
+              ></textarea>
+            </label>
+          </div>
+
+          <div id="quote-error" class="quote-error" role="alert" hidden></div>
+
+          <div class="quote-actions">
+            <button type="button" class="secondary-btn" id="calculate-quote-btn">
+              Calculate
+            </button>
+            <button type="submit" class="add-btn" id="save-quote-btn">
+              Save Draft
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <aside class="quote-summary-shell">
+        <section class="quote-summary" aria-live="polite">
+          <div class="quote-panel-header">
+            <h2>Quote Summary</h2>
+            <p>Totals are saved as a snapshot on each draft.</p>
+          </div>
+
+          <div id="quote-summary-content" class="quote-summary-content">
+            <p class="quote-muted">Calculate a quote to preview pricing.</p>
+          </div>
+        </section>
+
+        <section class="quote-summary">
+          <div class="quote-panel-header">
+            <h2>Recent Drafts</h2>
+            <p>Saved quotes stay separate from production orders.</p>
+          </div>
+
+          <div id="quote-list" class="quote-list">
+            <p class="quote-muted">Loading drafts...</p>
+          </div>
+        </section>
+      </aside>
+    </main>
+
+    <script src="/quotes.js"></script>
+  </body>
+</html>
