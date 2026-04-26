@@ -76,6 +76,10 @@ function getQuoteIdFromPath() {
 
 function renderQuote(quote) {
   const item = quote.items?.[0] || {};
+  const contactRows = [quote.customer_email, quote.customer_phone]
+    .filter(Boolean)
+    .map((value) => `<p>${escapeHtml(value)}</p>`)
+    .join("");
   const placements = (item.placements || [])
     .map((placement) => PLACEMENT_LABELS[placement] || placement)
     .filter(Boolean)
@@ -103,8 +107,7 @@ function renderQuote(quote) {
       <div class="quote-output-section">
         <h3>Prepared For</h3>
         <p>${escapeHtml(quote.customer_name)}</p>
-        <p>${escapeHtml(quote.customer_email || "")}</p>
-        <p>${escapeHtml(quote.customer_phone || "")}</p>
+        ${contactRows || `<p class="quote-output-muted">Contact not set</p>`}
       </div>
 
       <div class="quote-output-section">

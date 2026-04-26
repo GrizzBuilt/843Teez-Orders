@@ -176,6 +176,26 @@ function getRulePayload() {
   };
 }
 
+function validateBlankPayload(payload) {
+  if (!payload.brand || !payload.style_number || !payload.name) {
+    throw new Error("Brand, style, and name are required");
+  }
+}
+
+function validateRulePayload(payload) {
+  if (!payload.print_type) {
+    throw new Error("Print type is required");
+  }
+
+  if (!payload.placement) {
+    throw new Error("Placement is required");
+  }
+
+  if (payload.max_quantity < payload.min_quantity) {
+    throw new Error("Max quantity must be greater than or equal to min quantity");
+  }
+}
+
 function editBlank(blankId) {
   const blank = blanks.find((entry) => Number(entry.id) === Number(blankId));
 
@@ -325,12 +345,16 @@ async function saveBlank() {
 
   try {
     const blankId = document.getElementById("blank_id").value;
+    const payload = getBlankPayload();
+
+    validateBlankPayload(payload);
+
     const response = await fetch(
       blankId ? `/api/pricing/shirt-blanks/${blankId}` : "/api/pricing/shirt-blanks",
       {
         method: blankId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(getBlankPayload()),
+        body: JSON.stringify(payload),
       }
     );
 
@@ -352,12 +376,16 @@ async function saveRule() {
 
   try {
     const ruleId = document.getElementById("rule_id").value;
+    const payload = getRulePayload();
+
+    validateRulePayload(payload);
+
     const response = await fetch(
       ruleId ? `/api/pricing/print-rules/${ruleId}` : "/api/pricing/print-rules",
       {
         method: ruleId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(getRulePayload()),
+        body: JSON.stringify(payload),
       }
     );
 

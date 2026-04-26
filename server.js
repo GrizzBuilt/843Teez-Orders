@@ -701,6 +701,10 @@ function normalizeQuotePlacement(value) {
     : "";
 }
 
+function isUniqueConstraintError(err) {
+  return err?.code === "SQLITE_CONSTRAINT" && /UNIQUE/i.test(err.message || "");
+}
+
 function normalizeQuoteSizes(input) {
   const sizes = input && typeof input === "object" ? input : {};
 
@@ -1166,7 +1170,11 @@ app.post("/api/pricing/shirt-blanks", async (req, res) => {
     }
   } catch (err) {
     console.error("Error creating pricing blank:", err.message);
-    res.status(500).json({ error: "Failed to create shirt blank" });
+    res.status(isUniqueConstraintError(err) ? 409 : 500).json({
+      error: isUniqueConstraintError(err)
+        ? "A shirt blank with that brand and style already exists"
+        : "Failed to create shirt blank",
+    });
   }
 });
 
@@ -1253,7 +1261,11 @@ app.patch("/api/pricing/shirt-blanks/:id", async (req, res) => {
     }
   } catch (err) {
     console.error("Error updating pricing blank:", err.message);
-    res.status(500).json({ error: "Failed to update shirt blank" });
+    res.status(isUniqueConstraintError(err) ? 409 : 500).json({
+      error: isUniqueConstraintError(err)
+        ? "A shirt blank with that brand and style already exists"
+        : "Failed to update shirt blank",
+    });
   }
 });
 
@@ -1328,7 +1340,11 @@ app.post("/api/pricing/print-rules", async (req, res) => {
     res.status(201).json({ ok: true, id: result.lastID });
   } catch (err) {
     console.error("Error creating pricing print rule:", err.message);
-    res.status(500).json({ error: "Failed to create print pricing rule" });
+    res.status(isUniqueConstraintError(err) ? 409 : 500).json({
+      error: isUniqueConstraintError(err)
+        ? "A print pricing rule already exists for that type, placement, and quantity range"
+        : "Failed to create print pricing rule",
+    });
   }
 });
 
@@ -1391,7 +1407,11 @@ app.patch("/api/pricing/print-rules/:id", async (req, res) => {
     res.json({ ok: true, id: ruleId });
   } catch (err) {
     console.error("Error updating pricing print rule:", err.message);
-    res.status(500).json({ error: "Failed to update print pricing rule" });
+    res.status(isUniqueConstraintError(err) ? 409 : 500).json({
+      error: isUniqueConstraintError(err)
+        ? "A print pricing rule already exists for that type, placement, and quantity range"
+        : "Failed to update print pricing rule",
+    });
   }
 });
 
