@@ -384,6 +384,12 @@ function renderQuoteDetail(quote) {
       <span class="quote-status-pill">${escapeHtml(formatStatus(quote.status))}</span>
     </div>
 
+    <div class="quote-card-actions">
+      <a class="secondary-btn quote-output-link" href="/quote/${escapeHtml(quote.id)}" target="_blank" rel="noopener">
+        Customer View
+      </a>
+    </div>
+
     <div class="quote-total-row">
       <strong>Contact</strong>
       <span>${escapeHtml([quote.customer_email, quote.customer_phone].filter(Boolean).join(" - ") || "Not set")}</span>
@@ -509,6 +515,14 @@ async function loadQuotes() {
               >
                 View
               </button>
+              <a
+                class="secondary-btn quote-output-link"
+                href="/quote/${escapeHtml(quote.id)}"
+                target="_blank"
+                rel="noopener"
+              >
+                Customer
+              </a>
               ${
                 !isConverted
                   ? `

@@ -2344,6 +2344,10 @@ app.get("/pricing", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "pricing.html"));
 });
 
+app.get("/quote/:id", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "quote-output.html"));
+});
+
 // =====================
 // Server Start
 // =====================

@@ -298,9 +298,17 @@
   margin-top: 0.7rem;
 }
 
-.quote-card-actions button {
+.quote-card-actions button,
+.quote-output-link {
   min-height: 36px;
   padding: 0.45rem 0.7rem;
+}
+
+.quote-output-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
 }
 
 .quote-status-pill {

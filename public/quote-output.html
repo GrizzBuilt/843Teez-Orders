@@ -1,0 +1,30 @@
+<!--
+  File: public/quote-output.html
+  Project: 843Teez Orders
+  Purpose: Customer-facing quote output
+-->
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>843 Teez Quote</title>
+    <link rel="stylesheet" href="/quote-output.css" />
+  </head>
+  <body>
+    <header class="quote-output-toolbar">
+      <a href="/quotes">Back to Quotes</a>
+      <button type="button" id="print-quote-btn">Print</button>
+    </header>
+
+    <main id="quote-output" class="quote-output">
+      <p class="quote-output-muted">Loading quote...</p>
+    </main>
+
+    <script src="/quote-output.js"></script>
+  </body>
+</html>
