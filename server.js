@@ -680,6 +680,27 @@ function normalizeMoneyCents(value) {
   return Number.isFinite(cents) ? Math.max(0, Math.round(cents)) : 0;
 }
 
+function normalizeActive(value) {
+  return value === false || value === 0 || value === "0" ? 0 : 1;
+}
+
+function normalizeQuantityBound(value, fallback) {
+  const quantity = Math.floor(Number(value));
+  return Number.isFinite(quantity) && quantity > 0 ? quantity : fallback;
+}
+
+function normalizeQuoteSizeLabel(value) {
+  const sizeLabel = String(value || "").trim().toUpperCase();
+  return QUOTE_SIZE_ORDER.includes(sizeLabel) ? sizeLabel : "";
+}
+
+function normalizeQuotePlacement(value) {
+  const placement = String(value || "").trim();
+  return Object.prototype.hasOwnProperty.call(QUOTE_PLACEMENTS, placement)
+    ? placement
+    : "";
+}
+
 function normalizeQuoteSizes(input) {
   const sizes = input && typeof input === "object" ? input : {};
 
@@ -1035,6 +1056,342 @@ app.get("/api/print-pricing-rules", async (req, res) => {
   } catch (err) {
     console.error("Error fetching print pricing rules:", err.message);
     res.status(500).json({ error: "Failed to fetch print pricing rules" });
+  }
+});
+
+// =====================
+// Routes - Pricing Admin: Shirt Blanks
+// Purpose:
+// - Manage quote blank costs without changing saved quote snapshots
+// =====================
+app.get("/api/pricing/shirt-blanks", async (req, res) => {
+  try {
+    const blanks = await dbAll(
+      `
+        SELECT *
+        FROM shirt_blanks
+        ORDER BY active DESC, brand ASC, style_number ASC, name ASC
+      `
+    );
+
+    const sizeCosts = await dbAll(
+      `
+        SELECT *
+        FROM shirt_blank_size_costs
+        ORDER BY shirt_blank_id ASC, size_label ASC
+      `
+    );
+
+    const sizeCostsByBlank = sizeCosts.reduce((acc, row) => {
+      const blankId = Number(row.shirt_blank_id);
+
+      if (!acc[blankId]) {
+        acc[blankId] = {};
+      }
+
+      acc[blankId][row.size_label] = normalizeMoneyCents(row.extra_cost_cents);
+      return acc;
+    }, {});
+
+    res.json(
+      blanks.map((blank) => ({
+        ...blank,
+        base_cost_cents: normalizeMoneyCents(blank.base_cost_cents),
+        size_costs: sizeCostsByBlank[blank.id] || {},
+      }))
+    );
+  } catch (err) {
+    console.error("Error fetching pricing blanks:", err.message);
+    res.status(500).json({ error: "Failed to fetch pricing blanks" });
+  }
+});
+
+app.post("/api/pricing/shirt-blanks", async (req, res) => {
+  const brand = String(req.body?.brand || "").trim();
+  const styleNumber = String(req.body?.style_number || "").trim();
+  const name = String(req.body?.name || "").trim();
+  const description = String(req.body?.description || "").trim();
+  const baseCostCents = normalizeMoneyCents(req.body?.base_cost_cents);
+  const active = normalizeActive(req.body?.active);
+  const sizeCosts = req.body?.size_costs || {};
+
+  if (!brand || !styleNumber || !name) {
+    return res.status(400).json({ error: "Brand, style number, and name are required" });
+  }
+
+  try {
+    await dbRun("BEGIN IMMEDIATE TRANSACTION");
+
+    try {
+      const result = await dbRun(
+        `
+          INSERT INTO shirt_blanks (
+            brand,
+            style_number,
+            name,
+            description,
+            base_cost_cents,
+            active
+          )
+          VALUES (?, ?, ?, ?, ?, ?)
+        `,
+        [brand, styleNumber, name, description, baseCostCents, active]
+      );
+
+      for (const [sizeLabelInput, extraCost] of Object.entries(sizeCosts)) {
+        const sizeLabel = normalizeQuoteSizeLabel(sizeLabelInput);
+
+        if (!sizeLabel) {
+          continue;
+        }
+
+        await dbRun(
+          `
+            INSERT INTO shirt_blank_size_costs (
+              shirt_blank_id,
+              size_label,
+              extra_cost_cents
+            )
+            VALUES (?, ?, ?)
+          `,
+          [result.lastID, sizeLabel, normalizeMoneyCents(extraCost)]
+        );
+      }
+
+      await dbRun("COMMIT");
+      res.status(201).json({ ok: true, id: result.lastID });
+    } catch (err) {
+      await dbRun("ROLLBACK");
+      throw err;
+    }
+  } catch (err) {
+    console.error("Error creating pricing blank:", err.message);
+    res.status(500).json({ error: "Failed to create shirt blank" });
+  }
+});
+
+app.patch("/api/pricing/shirt-blanks/:id", async (req, res) => {
+  const blankId = Number(req.params.id);
+  const brand = String(req.body?.brand || "").trim();
+  const styleNumber = String(req.body?.style_number || "").trim();
+  const name = String(req.body?.name || "").trim();
+  const description = String(req.body?.description || "").trim();
+  const baseCostCents = normalizeMoneyCents(req.body?.base_cost_cents);
+  const active = normalizeActive(req.body?.active);
+  const sizeCosts = req.body?.size_costs || {};
+
+  if (!Number.isInteger(blankId) || blankId < 1) {
+    return res.status(400).json({ error: "Valid shirt blank id is required" });
+  }
+
+  if (!brand || !styleNumber || !name) {
+    return res.status(400).json({ error: "Brand, style number, and name are required" });
+  }
+
+  try {
+    await dbRun("BEGIN IMMEDIATE TRANSACTION");
+
+    try {
+      const result = await dbRun(
+        `
+          UPDATE shirt_blanks
+          SET brand = ?,
+              style_number = ?,
+              name = ?,
+              description = ?,
+              base_cost_cents = ?,
+              active = ?,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `,
+        [brand, styleNumber, name, description, baseCostCents, active, blankId]
+      );
+
+      if (result.changes === 0) {
+        await dbRun("ROLLBACK");
+        return res.status(404).json({ error: "Shirt blank not found" });
+      }
+
+      for (const [sizeLabelInput, extraCost] of Object.entries(sizeCosts)) {
+        const sizeLabel = normalizeQuoteSizeLabel(sizeLabelInput);
+
+        if (!sizeLabel) {
+          continue;
+        }
+
+        const updateResult = await dbRun(
+          `
+            UPDATE shirt_blank_size_costs
+            SET extra_cost_cents = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE shirt_blank_id = ?
+              AND size_label = ?
+          `,
+          [normalizeMoneyCents(extraCost), blankId, sizeLabel]
+        );
+
+        if (updateResult.changes === 0) {
+          await dbRun(
+            `
+              INSERT INTO shirt_blank_size_costs (
+                shirt_blank_id,
+                size_label,
+                extra_cost_cents
+              )
+              VALUES (?, ?, ?)
+            `,
+            [blankId, sizeLabel, normalizeMoneyCents(extraCost)]
+          );
+        }
+      }
+
+      await dbRun("COMMIT");
+      res.json({ ok: true, id: blankId });
+    } catch (err) {
+      await dbRun("ROLLBACK");
+      throw err;
+    }
+  } catch (err) {
+    console.error("Error updating pricing blank:", err.message);
+    res.status(500).json({ error: "Failed to update shirt blank" });
+  }
+});
+
+// =====================
+// Routes - Pricing Admin: Print Rules
+// Purpose:
+// - Manage database-driven print cost and price rules
+// =====================
+app.get("/api/pricing/print-rules", async (req, res) => {
+  try {
+    const rows = await dbAll(
+      `
+        SELECT *
+        FROM print_pricing_rules
+        ORDER BY active DESC, print_type ASC, placement ASC, min_quantity ASC
+      `
+    );
+
+    res.json(rows);
+  } catch (err) {
+    console.error("Error fetching pricing print rules:", err.message);
+    res.status(500).json({ error: "Failed to fetch print pricing rules" });
+  }
+});
+
+app.post("/api/pricing/print-rules", async (req, res) => {
+  const printType = normalizePrintType(req.body?.print_type);
+  const placement = normalizeQuotePlacement(req.body?.placement);
+  const minQuantity = normalizeQuantityBound(req.body?.min_quantity, 1);
+  const maxQuantity = normalizeQuantityBound(req.body?.max_quantity, 999999);
+  const active = normalizeActive(req.body?.active);
+
+  if (!printType) {
+    return res.status(400).json({ error: "Print type is required" });
+  }
+
+  if (!placement) {
+    return res.status(400).json({ error: "Placement is required" });
+  }
+
+  if (maxQuantity < minQuantity) {
+    return res.status(400).json({ error: "Max quantity must be greater than min quantity" });
+  }
+
+  try {
+    const result = await dbRun(
+      `
+        INSERT INTO print_pricing_rules (
+          print_type,
+          placement,
+          min_quantity,
+          max_quantity,
+          setup_fee_cents,
+          print_cost_per_shirt_cents,
+          print_price_per_shirt_cents,
+          active
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        printType,
+        placement,
+        minQuantity,
+        maxQuantity,
+        normalizeMoneyCents(req.body?.setup_fee_cents),
+        normalizeMoneyCents(req.body?.print_cost_per_shirt_cents),
+        normalizeMoneyCents(req.body?.print_price_per_shirt_cents),
+        active,
+      ]
+    );
+
+    res.status(201).json({ ok: true, id: result.lastID });
+  } catch (err) {
+    console.error("Error creating pricing print rule:", err.message);
+    res.status(500).json({ error: "Failed to create print pricing rule" });
+  }
+});
+
+app.patch("/api/pricing/print-rules/:id", async (req, res) => {
+  const ruleId = Number(req.params.id);
+  const printType = normalizePrintType(req.body?.print_type);
+  const placement = normalizeQuotePlacement(req.body?.placement);
+  const minQuantity = normalizeQuantityBound(req.body?.min_quantity, 1);
+  const maxQuantity = normalizeQuantityBound(req.body?.max_quantity, 999999);
+  const active = normalizeActive(req.body?.active);
+
+  if (!Number.isInteger(ruleId) || ruleId < 1) {
+    return res.status(400).json({ error: "Valid print rule id is required" });
+  }
+
+  if (!printType) {
+    return res.status(400).json({ error: "Print type is required" });
+  }
+
+  if (!placement) {
+    return res.status(400).json({ error: "Placement is required" });
+  }
+
+  if (maxQuantity < minQuantity) {
+    return res.status(400).json({ error: "Max quantity must be greater than min quantity" });
+  }
+
+  try {
+    const result = await dbRun(
+      `
+        UPDATE print_pricing_rules
+        SET print_type = ?,
+            placement = ?,
+            min_quantity = ?,
+            max_quantity = ?,
+            setup_fee_cents = ?,
+            print_cost_per_shirt_cents = ?,
+            print_price_per_shirt_cents = ?,
+            active = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `,
+      [
+        printType,
+        placement,
+        minQuantity,
+        maxQuantity,
+        normalizeMoneyCents(req.body?.setup_fee_cents),
+        normalizeMoneyCents(req.body?.print_cost_per_shirt_cents),
+        normalizeMoneyCents(req.body?.print_price_per_shirt_cents),
+        active,
+        ruleId,
+      ]
+    );
+
+    if (result.changes === 0) {
+      return res.status(404).json({ error: "Print pricing rule not found" });
+    }
+
+    res.json({ ok: true, id: ruleId });
+  } catch (err) {
+    console.error("Error updating pricing print rule:", err.message);
+    res.status(500).json({ error: "Failed to update print pricing rule" });
   }
 });
 
@@ -1981,6 +2338,10 @@ app.get("/", (req, res) => {
 
 app.get("/quotes", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "quotes.html"));
+});
+
+app.get("/pricing", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "pricing.html"));
 });
 
 // =====================

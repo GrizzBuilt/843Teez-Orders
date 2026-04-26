@@ -1,0 +1,186 @@
+<!--
+  File: public/pricing.html
+  Project: 843Teez Orders
+  Purpose: Quote pricing admin
+-->
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>843 Teez Pricing Admin</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/quotes.css" />
+    <link rel="stylesheet" href="/pricing.css" />
+  </head>
+  <body class="quote-page">
+    <header class="quote-topbar">
+      <div>
+        <h1>Pricing Admin</h1>
+        <p class="subtitle">Manage quote blanks, size upcharges, and print pricing rules.</p>
+      </div>
+
+      <div class="quote-topbar-actions">
+        <a class="secondary-btn quote-link-btn" href="/quotes">Quotes</a>
+        <a class="secondary-btn quote-link-btn" href="/">Orders</a>
+      </div>
+    </header>
+
+    <main class="pricing-layout">
+      <section class="quote-panel">
+        <div class="quote-panel-header">
+          <h2>Shirt Blanks</h2>
+          <p>Blank costs feed new quote calculations only.</p>
+        </div>
+
+        <form id="blank-form" class="quote-form pricing-form" novalidate>
+          <input type="hidden" id="blank_id" name="blank_id" />
+
+          <div class="quote-grid">
+            <label class="quote-field">
+              <span>Brand</span>
+              <input id="blank_brand" name="brand" type="text" required />
+            </label>
+
+            <label class="quote-field">
+              <span>Style</span>
+              <input id="blank_style_number" name="style_number" type="text" required />
+            </label>
+
+            <label class="quote-field quote-field-wide">
+              <span>Name</span>
+              <input id="blank_name" name="name" type="text" required />
+            </label>
+
+            <label class="quote-field quote-field-wide">
+              <span>Description</span>
+              <input id="blank_description" name="description" type="text" />
+            </label>
+
+            <label class="quote-field">
+              <span>Base Cost</span>
+              <input
+                id="blank_base_cost"
+                name="base_cost"
+                type="number"
+                min="0"
+                step="0.01"
+                inputmode="decimal"
+                required
+              />
+            </label>
+
+            <label class="quote-field pricing-checkbox-field">
+              <span>Active</span>
+              <input id="blank_active" name="active" type="checkbox" checked />
+            </label>
+          </div>
+
+          <div class="quote-section">
+            <h3>Size Upcharges</h3>
+            <div id="blank-size-costs" class="pricing-size-grid"></div>
+          </div>
+
+          <div id="blank-error" class="quote-error" role="alert" hidden></div>
+
+          <div class="quote-actions">
+            <button type="button" class="secondary-btn" id="blank-reset-btn">
+              New Blank
+            </button>
+            <button type="submit" class="add-btn" id="blank-save-btn">
+              Save Blank
+            </button>
+          </div>
+        </form>
+
+        <div id="blank-list" class="pricing-list">
+          <p class="quote-muted">Loading blanks...</p>
+        </div>
+      </section>
+
+      <section class="quote-panel">
+        <div class="quote-panel-header">
+          <h2>Print Rules</h2>
+          <p>Rules are matched by print type, placement, and quantity range.</p>
+        </div>
+
+        <form id="rule-form" class="quote-form pricing-form" novalidate>
+          <input type="hidden" id="rule_id" name="rule_id" />
+
+          <div class="quote-grid">
+            <label class="quote-field">
+              <span>Print Type</span>
+              <select id="rule_print_type" name="print_type" required>
+                <option value="">Select one</option>
+                <option value="DTF">DTF</option>
+                <option value="Screen Print">Screen Print</option>
+              </select>
+            </label>
+
+            <label class="quote-field">
+              <span>Placement</span>
+              <select id="rule_placement" name="placement" required>
+                <option value="">Select one</option>
+                <option value="left_chest">Left Chest</option>
+                <option value="full_front">Full Front</option>
+                <option value="full_back">Full Back</option>
+                <option value="sleeve">Sleeve</option>
+              </select>
+            </label>
+
+            <label class="quote-field">
+              <span>Min Qty</span>
+              <input id="rule_min_quantity" name="min_quantity" type="number" min="1" step="1" required />
+            </label>
+
+            <label class="quote-field">
+              <span>Max Qty</span>
+              <input id="rule_max_quantity" name="max_quantity" type="number" min="1" step="1" required />
+            </label>
+
+            <label class="quote-field">
+              <span>Setup Fee</span>
+              <input id="rule_setup_fee" name="setup_fee" type="number" min="0" step="0.01" inputmode="decimal" />
+            </label>
+
+            <label class="quote-field">
+              <span>Print Cost / Shirt</span>
+              <input id="rule_print_cost" name="print_cost" type="number" min="0" step="0.01" inputmode="decimal" />
+            </label>
+
+            <label class="quote-field">
+              <span>Print Price / Shirt</span>
+              <input id="rule_print_price" name="print_price" type="number" min="0" step="0.01" inputmode="decimal" />
+            </label>
+
+            <label class="quote-field pricing-checkbox-field">
+              <span>Active</span>
+              <input id="rule_active" name="active" type="checkbox" checked />
+            </label>
+          </div>
+
+          <div id="rule-error" class="quote-error" role="alert" hidden></div>
+
+          <div class="quote-actions">
+            <button type="button" class="secondary-btn" id="rule-reset-btn">
+              New Rule
+            </button>
+            <button type="submit" class="add-btn" id="rule-save-btn">
+              Save Rule
+            </button>
+          </div>
+        </form>
+
+        <div id="rule-list" class="pricing-list">
+          <p class="quote-muted">Loading print rules...</p>
+        </div>
+      </section>
+    </main>
+
+    <script src="/pricing.js"></script>
+  </body>
+</html>
