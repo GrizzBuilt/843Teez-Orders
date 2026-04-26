@@ -4,15 +4,15 @@
 ## Local Routes
 
 - `/` - production order tracker
-- `/quotes` - draft quote builder and quote management
-- `/pricing` - quote pricing admin for shirt blanks, size upcharges, and print rules
+- `/quotes` or `/quotes.html` - draft quote builder and quote management
+- `/pricing` or `/pricing.html` - quote pricing admin for shirt blanks, size upcharges, and print rules
 - `/quote/:id` - customer-facing printable quote
 
 ## Quote Workflow
 
-1. Manage blank and print pricing at `/pricing`.
-2. Build and save draft quotes at `/quotes`.
+1. Manage blank and print pricing at `/pricing.html`.
+2. Build and save draft quotes at `/quotes.html`.
 3. Open the customer view from a saved quote to print or share the quote.
-4. Convert an approved quote to an order from `/quotes`.
+4. Convert an approved quote to an order from `/quotes.html`.
 
 Saved quotes keep their pricing snapshot. Later pricing changes affect new quotes, not existing saved quotes.
