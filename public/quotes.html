@@ -185,12 +185,46 @@
 
         <section class="quote-summary">
           <div class="quote-panel-header">
-            <h2>Recent Drafts</h2>
+            <h2>Saved Quotes</h2>
             <p>Saved quotes stay separate from production orders.</p>
+          </div>
+
+          <div class="quote-list-controls">
+            <label class="quote-field">
+              <span>Search</span>
+              <input
+                type="search"
+                id="quote-search"
+                placeholder="Customer, email, phone..."
+                autocomplete="off"
+              />
+            </label>
+
+            <label class="quote-field">
+              <span>Status</span>
+              <select id="quote-status-filter">
+                <option value="active">Active</option>
+                <option value="draft">Draft</option>
+                <option value="converted">Converted</option>
+                <option value="archived">Archived</option>
+                <option value="all">All</option>
+              </select>
+            </label>
           </div>
 
           <div id="quote-list" class="quote-list">
             <p class="quote-muted">Loading drafts...</p>
+          </div>
+        </section>
+
+        <section class="quote-summary">
+          <div class="quote-panel-header">
+            <h2>Quote Detail</h2>
+            <p>Open a saved quote to review its pricing snapshot.</p>
+          </div>
+
+          <div id="quote-detail" class="quote-detail">
+            <p class="quote-muted">Select a quote to view details.</p>
           </div>
         </section>
       </aside>

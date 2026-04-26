@@ -13,11 +13,15 @@ const quantityTotal = document.getElementById("quantity-total");
 const quoteError = document.getElementById("quote-error");
 const quoteSummaryContent = document.getElementById("quote-summary-content");
 const quoteList = document.getElementById("quote-list");
+const quoteDetail = document.getElementById("quote-detail");
+const quoteSearch = document.getElementById("quote-search");
+const quoteStatusFilter = document.getElementById("quote-status-filter");
 const calculateQuoteBtn = document.getElementById("calculate-quote-btn");
 const saveQuoteBtn = document.getElementById("save-quote-btn");
 
 let isSavingQuote = false;
 let isCalculatingQuote = false;
+let quoteSearchTimer = null;
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -33,6 +37,42 @@ function formatMoney(cents) {
     style: "currency",
     currency: "USD",
   }).format((Number(cents) || 0) / 100);
+}
+
+function formatDate(value) {
+  if (!value) return "Not set";
+
+  const date = new Date(`${value}T00:00:00`);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(date);
+}
+
+function formatStatus(value) {
+  return String(value || "draft")
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function getQuoteListParams() {
+  const params = new URLSearchParams();
+  const status = quoteStatusFilter?.value || "active";
+  const search = quoteSearch?.value.trim() || "";
+
+  params.set("status", status);
+
+  if (search) {
+    params.set("q", search);
+  }
+
+  return params;
 }
 
 function showQuoteError(message) {
@@ -301,6 +341,7 @@ async function convertQuoteToOrder(quoteId, button) {
     `;
 
     await loadQuotes();
+    await loadQuoteDetail(converted.quote_id);
   } catch (error) {
     showQuoteError(error.message);
 
@@ -311,33 +352,166 @@ async function convertQuoteToOrder(quoteId, button) {
   }
 }
 
+function renderQuoteDetail(quote) {
+  if (!quoteDetail) return;
+
+  const item = quote.items?.[0];
+  const placements = (item?.placements || [])
+    .map((placement) =>
+      String(placement)
+        .replaceAll("_", " ")
+        .replace(/\b\w/g, (letter) => letter.toUpperCase())
+    )
+    .join(", ");
+  const sizeRows = (item?.sizes || [])
+    .filter((size) => Number(size.quantity) > 0)
+    .map(
+      (size) => `
+        <div class="quote-detail-size">
+          <span>${escapeHtml(size.size_label)}</span>
+          <strong>${escapeHtml(size.quantity)}</strong>
+        </div>
+      `
+    )
+    .join("");
+
+  quoteDetail.innerHTML = `
+    <div class="quote-detail-header">
+      <div>
+        <h3>#${escapeHtml(quote.id)} ${escapeHtml(quote.customer_name)}</h3>
+        <p>${escapeHtml(formatStatus(quote.status))} - Due ${escapeHtml(formatDate(quote.due_date))}</p>
+      </div>
+      <span class="quote-status-pill">${escapeHtml(formatStatus(quote.status))}</span>
+    </div>
+
+    <div class="quote-total-row">
+      <strong>Contact</strong>
+      <span>${escapeHtml([quote.customer_email, quote.customer_phone].filter(Boolean).join(" - ") || "Not set")}</span>
+    </div>
+    <div class="quote-total-row">
+      <strong>Blank</strong>
+      <span>${escapeHtml(item?.blank_label || "Not set")}</span>
+    </div>
+    <div class="quote-total-row">
+      <strong>Color</strong>
+      <span>${escapeHtml(item?.color || "Not set")}</span>
+    </div>
+    <div class="quote-total-row">
+      <strong>Print</strong>
+      <span>${escapeHtml([item?.print_type, placements].filter(Boolean).join(" - ") || "Not set")}</span>
+    </div>
+    <div class="quote-total-row">
+      <strong>Total Qty</strong>
+      <span>${escapeHtml(quote.total_quantity)}</span>
+    </div>
+    <div class="quote-total-row">
+      <strong>Per Shirt</strong>
+      <span>${formatMoney(quote.price_per_shirt_cents)}</span>
+    </div>
+    <div class="quote-total-row">
+      <strong>Profit</strong>
+      <span>${formatMoney(quote.profit_cents)}</span>
+    </div>
+    <div class="quote-total-row quote-grand-total">
+      <strong>Total Quote</strong>
+      <span>${formatMoney(quote.total_price_cents)}</span>
+    </div>
+
+    <div class="quote-detail-sizes">
+      ${sizeRows || `<p class="quote-muted">No sizes saved.</p>`}
+    </div>
+
+    ${
+      quote.notes
+        ? `<div class="quote-detail-notes">${escapeHtml(quote.notes)}</div>`
+        : ""
+    }
+  `;
+}
+
+async function loadQuoteDetail(quoteId) {
+  if (!quoteDetail) return;
+
+  quoteDetail.innerHTML = `<p class="quote-muted">Loading quote #${escapeHtml(quoteId)}...</p>`;
+
+  try {
+    const response = await fetch(`/api/quotes/${quoteId}`);
+    const quote = await parseApiResponse(response, "Failed to load quote");
+    renderQuoteDetail(quote);
+  } catch (error) {
+    quoteDetail.innerHTML = `<p class="quote-muted">${escapeHtml(error.message)}</p>`;
+  }
+}
+
+async function updateQuoteStatus(quoteId, status, button) {
+  clearQuoteError();
+
+  if (button) {
+    button.disabled = true;
+    button.textContent = status === "archived" ? "Archiving..." : "Restoring...";
+  }
+
+  try {
+    const response = await fetch(`/api/quotes/${quoteId}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+
+    await parseApiResponse(response, "Failed to update quote");
+    await loadQuotes();
+    await loadQuoteDetail(quoteId);
+  } catch (error) {
+    showQuoteError(error.message);
+
+    if (button) {
+      button.disabled = false;
+      button.textContent = status === "archived" ? "Archive" : "Restore";
+    }
+  }
+}
+
 async function loadQuotes() {
   if (!quoteList) return;
 
   try {
-    const response = await fetch("/api/quotes");
+    const params = getQuoteListParams();
+    const response = await fetch(`/api/quotes?${params.toString()}`);
     const quotes = await parseApiResponse(response, "Failed to load quotes");
 
     if (!quotes.length) {
-      quoteList.innerHTML = `<p class="quote-muted">No draft quotes yet.</p>`;
+      quoteList.innerHTML = `<p class="quote-muted">No quotes match this view.</p>`;
       return;
     }
 
     quoteList.innerHTML = quotes
-      .slice(0, 8)
       .map(
         (quote) => {
           const isConverted = quote.status === "converted" || quote.converted_job_id;
+          const isArchived = quote.status === "archived";
 
           return `
           <article class="quote-draft-card">
-            <h3>#${escapeHtml(quote.id)} ${escapeHtml(quote.customer_name)}</h3>
+            <div class="quote-card-heading">
+              <h3>#${escapeHtml(quote.id)} ${escapeHtml(quote.customer_name)}</h3>
+              <span class="quote-status-pill">${escapeHtml(formatStatus(quote.status))}</span>
+            </div>
             <p>${escapeHtml(quote.total_quantity)} shirts - ${formatMoney(quote.total_price_cents)}</p>
             <p>${formatMoney(quote.price_per_shirt_cents)} each - Profit ${formatMoney(quote.profit_cents)}</p>
-            ${
-              isConverted
-                ? `<p>Converted to job #${escapeHtml(quote.converted_job_id)}</p>`
-                : `
+            <p>Due ${escapeHtml(formatDate(quote.due_date))}</p>
+            ${isConverted ? `<p>Converted to job #${escapeHtml(quote.converted_job_id)}</p>` : ""}
+
+            <div class="quote-card-actions">
+              <button
+                type="button"
+                class="secondary-btn quote-view-btn"
+                data-quote-id="${escapeHtml(quote.id)}"
+              >
+                View
+              </button>
+              ${
+                !isConverted
+                  ? `
                   <button
                     type="button"
                     class="secondary-btn quote-convert-btn"
@@ -346,16 +520,48 @@ async function loadQuotes() {
                     Convert
                   </button>
                 `
-            }
+                  : ""
+              }
+              ${
+                !isConverted
+                  ? `
+                    <button
+                      type="button"
+                      class="secondary-btn quote-status-btn"
+                      data-quote-id="${escapeHtml(quote.id)}"
+                      data-status="${isArchived ? "draft" : "archived"}"
+                    >
+                      ${isArchived ? "Restore" : "Archive"}
+                    </button>
+                  `
+                  : ""
+              }
+            </div>
           </article>
         `;
         }
       )
       .join("");
 
+    quoteList.querySelectorAll(".quote-view-btn").forEach((button) => {
+      button.addEventListener("click", async () => {
+        await loadQuoteDetail(button.dataset.quoteId);
+      });
+    });
+
     quoteList.querySelectorAll(".quote-convert-btn").forEach((button) => {
       button.addEventListener("click", async () => {
         await convertQuoteToOrder(button.dataset.quoteId, button);
+      });
+    });
+
+    quoteList.querySelectorAll(".quote-status-btn").forEach((button) => {
+      button.addEventListener("click", async () => {
+        await updateQuoteStatus(
+          button.dataset.quoteId,
+          button.dataset.status,
+          button
+        );
       });
     });
   } catch (error) {
@@ -375,6 +581,13 @@ quoteForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   await saveQuote();
 });
+
+quoteSearch?.addEventListener("input", () => {
+  window.clearTimeout(quoteSearchTimer);
+  quoteSearchTimer = window.setTimeout(loadQuotes, 250);
+});
+
+quoteStatusFilter?.addEventListener("change", loadQuotes);
 
 renderSizeInputs();
 setBusyState();

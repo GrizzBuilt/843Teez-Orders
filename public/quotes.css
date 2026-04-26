@@ -225,10 +225,18 @@
 }
 
 .quote-summary-content,
-.quote-list {
+.quote-list,
+.quote-detail {
   display: flex;
   flex-direction: column;
   gap: 0.7rem;
+}
+
+.quote-list-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 140px;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
 }
 
 .quote-total-row {
@@ -275,13 +283,92 @@
   font-size: 0.86rem;
 }
 
+.quote-card-heading,
+.quote-detail-header,
+.quote-card-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.quote-card-actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  margin-top: 0.7rem;
+}
+
+.quote-card-actions button {
+  min-height: 36px;
+  padding: 0.45rem 0.7rem;
+}
+
+.quote-status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 26px;
+  padding: 0 0.55rem;
+  border-radius: 999px;
+  background: #edf7f6;
+  color: #006d77;
+  font-size: 0.74rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.quote-detail-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.quote-detail-header p {
+  margin: 0.2rem 0 0;
+  color: #667085;
+  font-size: 0.86rem;
+}
+
+.quote-detail-sizes {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+  padding-top: 0.25rem;
+}
+
+.quote-detail-size {
+  border: 1px solid #d9e2ef;
+  border-radius: 8px;
+  background: #f8fbff;
+  padding: 0.55rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.quote-detail-size span {
+  color: #667085;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.quote-detail-notes {
+  border: 1px solid #e1e8f0;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #344054;
+  padding: 0.75rem;
+  white-space: pre-wrap;
+  font-size: 0.9rem;
+}
+
 @media (max-width: 960px) {
   .quote-layout {
     grid-template-columns: 1fr;
   }
 
   .quote-checkboxes,
-  .size-grid {
+  .size-grid,
+  .quote-detail-sizes {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -297,6 +384,10 @@
   }
 
   .quote-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .quote-list-controls {
     grid-template-columns: 1fr;
   }
 

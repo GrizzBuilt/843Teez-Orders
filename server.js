@@ -661,8 +661,18 @@ const QUOTE_PLACEMENTS = {
   sleeve: "Sleeve",
 };
 
-function normalizeQuoteStatus(value) {
-  return value === "draft" ? "draft" : "draft";
+function normalizeQuoteListStatus(value) {
+  const allowedStatuses = new Set([
+    "active",
+    "draft",
+    "sent",
+    "accepted",
+    "converted",
+    "archived",
+    "all",
+  ]);
+
+  return allowedStatuses.has(value) ? value : "active";
 }
 
 function normalizeMoneyCents(value) {
@@ -1048,6 +1058,29 @@ app.post("/api/quotes/calculate", async (req, res) => {
 // =====================
 app.get("/api/quotes", async (req, res) => {
   try {
+    const status = normalizeQuoteListStatus(req.query.status);
+    const search = String(req.query.q || "").trim();
+    const whereParts = [];
+    const params = [];
+
+    if (status === "active") {
+      whereParts.push(`status != 'archived'`);
+    } else if (status !== "all") {
+      whereParts.push(`status = ?`);
+      params.push(status);
+    }
+
+    if (search) {
+      whereParts.push(`
+        (
+          customer_name LIKE ?
+          OR customer_email LIKE ?
+          OR customer_phone LIKE ?
+        )
+      `);
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    }
+
     const rows = await dbAll(
       `
         SELECT
@@ -1065,8 +1098,10 @@ app.get("/api/quotes", async (req, res) => {
           created_at,
           updated_at
         FROM quotes
+        ${whereParts.length ? `WHERE ${whereParts.join(" AND ")}` : ""}
         ORDER BY updated_at DESC, id DESC
-      `
+      `,
+      params
     );
 
     res.json(rows);
@@ -1132,6 +1167,59 @@ app.get("/api/quotes/:id", async (req, res) => {
 });
 
 // =====================
+// Routes - Update Quote Status
+// Purpose:
+// - Manages quote lifecycle without changing production jobs
+// - Converted quotes cannot be reopened here
+// =====================
+app.patch("/api/quotes/:id/status", async (req, res) => {
+  const quoteId = Number(req.params.id);
+  const nextStatus = String(req.body?.status || "").trim();
+
+  if (!Number.isInteger(quoteId) || quoteId < 1) {
+    return res.status(400).json({ error: "Valid quote id is required" });
+  }
+
+  if (!["draft", "archived"].includes(nextStatus)) {
+    return res.status(400).json({ error: "Status must be draft or archived" });
+  }
+
+  try {
+    const quote = await dbGet(
+      `
+        SELECT id, status, converted_job_id
+        FROM quotes
+        WHERE id = ?
+      `,
+      [quoteId]
+    );
+
+    if (!quote) {
+      return res.status(404).json({ error: "Quote not found" });
+    }
+
+    if (quote.status === "converted" || quote.converted_job_id) {
+      return res.status(409).json({ error: "Converted quotes cannot be changed" });
+    }
+
+    await dbRun(
+      `
+        UPDATE quotes
+        SET status = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `,
+      [nextStatus, quoteId]
+    );
+
+    res.json({ ok: true, id: quoteId, status: nextStatus });
+  } catch (err) {
+    console.error("Error updating quote status:", err.message);
+    res.status(500).json({ error: "Failed to update quote status" });
+  }
+});
+
+// =====================
 // Routes - Save Quote Draft
 // =====================
 app.post("/api/quotes", async (req, res) => {
@@ -1173,7 +1261,7 @@ app.post("/api/quotes", async (req, res) => {
           customerName,
           String(quoteInput.customer_email || "").trim(),
           String(quoteInput.customer_phone || "").trim(),
-          normalizeQuoteStatus(quoteInput.status),
+          "draft",
           normalizeDueDate(quoteInput.due_date),
           String(quoteInput.notes || "").trim(),
           totals.total_quantity,
