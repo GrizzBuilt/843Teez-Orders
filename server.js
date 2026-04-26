@@ -699,6 +699,89 @@ function getBlankLabel(blank) {
   return `${blank.brand} ${blank.style_number} ${blank.name}`.trim();
 }
 
+function formatCentsForNote(cents) {
+  return `$${((Number(cents) || 0) / 100).toFixed(2)}`;
+}
+
+function getPlacementLabels(placements) {
+  return placements
+    .map((placement) => QUOTE_PLACEMENTS[placement] || placement)
+    .filter(Boolean);
+}
+
+function buildQuoteSizesSummary(sizes) {
+  return sizes
+    .filter((size) => Number(size.quantity) > 0)
+    .map((size) => `${size.size_label}-${size.quantity}`)
+    .join(", ");
+}
+
+function buildItemsSummaryFromQuoteItem(item, sizes) {
+  const color = item.color ? ` ${item.color}` : "";
+  const sizeSummary = buildQuoteSizesSummary(sizes);
+
+  return `${item.total_quantity} ${item.blank_label}${color}${
+    sizeSummary ? ` (${sizeSummary})` : ""
+  }`;
+}
+
+function buildNotesFromQuote(quote, item) {
+  const placements = getPlacementLabels(JSON.parse(item.placements_json || "[]"));
+  const notes = [
+    `Converted from Quote #${quote.id}`,
+    `Quote total: ${formatCentsForNote(quote.total_price_cents)}`,
+    `Price per shirt: ${formatCentsForNote(quote.price_per_shirt_cents)}`,
+  ];
+
+  if (placements.length) {
+    notes.push(`Placements: ${placements.join(", ")}`);
+  }
+
+  if (quote.notes) {
+    notes.push(`Quote notes: ${quote.notes}`);
+  }
+
+  return notes.join("\n");
+}
+
+async function getNextOrderNumberInOpenTransaction() {
+  const year = new Date().getFullYear();
+  const counterName = getOrderCounterName(year);
+  const seedValue = getOrderCounterSeedValue(year);
+
+  await dbRun(
+    `
+      INSERT OR IGNORE INTO counters (name, value)
+      VALUES (?, ?)
+    `,
+    [counterName, seedValue]
+  );
+
+  await dbRun(
+    `
+      UPDATE counters
+      SET value = value + 1
+      WHERE name = ?
+    `,
+    [counterName]
+  );
+
+  const row = await dbGet(
+    `
+      SELECT value
+      FROM counters
+      WHERE name = ?
+    `,
+    [counterName]
+  );
+
+  if (!row) {
+    throw new Error("Failed to load updated order counter");
+  }
+
+  return formatOrderNumber(year, row.value);
+}
+
 async function calculateQuote(input) {
   const itemInput = getQuoteItemInput(input);
   const shirtBlankId = Number(itemInput.shirt_blank_id);
@@ -1179,6 +1262,142 @@ app.post("/api/quotes", async (req, res) => {
     res.status(err.status || 500).json({
       error: err.status ? err.message : "Failed to save quote",
     });
+  }
+});
+
+// =====================
+// Routes - Convert Quote To Order
+// Purpose:
+// - Creates a normal production job from a saved draft quote
+// - Marks the quote converted and stores converted_job_id
+// - Leaves existing job routes and board behavior unchanged
+// =====================
+app.post("/api/quotes/:id/convert-to-order", async (req, res) => {
+  const quoteId = Number(req.params.id);
+
+  if (!Number.isInteger(quoteId) || quoteId < 1) {
+    return res.status(400).json({ error: "Valid quote id is required" });
+  }
+
+  try {
+    await dbRun("BEGIN IMMEDIATE TRANSACTION");
+
+    try {
+      const quote = await dbGet(`SELECT * FROM quotes WHERE id = ?`, [quoteId]);
+
+      if (!quote) {
+        await dbRun("ROLLBACK");
+        return res.status(404).json({ error: "Quote not found" });
+      }
+
+      if (quote.status === "converted" || quote.converted_job_id) {
+        await dbRun("ROLLBACK");
+        return res.status(409).json({
+          error: "Quote has already been converted",
+          converted_job_id: quote.converted_job_id,
+        });
+      }
+
+      const item = await dbGet(
+        `
+          SELECT *
+          FROM quote_items
+          WHERE quote_id = ?
+          ORDER BY id ASC
+          LIMIT 1
+        `,
+        [quoteId]
+      );
+
+      if (!item) {
+        await dbRun("ROLLBACK");
+        return res.status(400).json({ error: "Quote has no item to convert" });
+      }
+
+      const sizes = await dbAll(
+        `
+          SELECT *
+          FROM quote_item_sizes
+          WHERE quote_item_id = ?
+          ORDER BY id ASC
+        `,
+        [item.id]
+      );
+
+      const orderNumber = await getNextOrderNumberInOpenTransaction();
+      const itemsSummary = buildItemsSummaryFromQuoteItem(item, sizes);
+      const notes = buildNotesFromQuote(quote, item);
+
+      const jobResult = await dbRun(
+        `
+          INSERT INTO jobs (
+            order_number,
+            customer_name,
+            items_summary,
+            quantity,
+            print_type,
+            status,
+            blanks_ordered,
+            blanks_received,
+            dtf_source,
+            dtf_ready,
+            screens_made,
+            ink_on_hand,
+            ink_ordered,
+            ready_for_pickup,
+            notes,
+            due_date,
+            completed_at
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+        [
+          orderNumber,
+          quote.customer_name,
+          itemsSummary,
+          quote.total_quantity,
+          item.print_type,
+          "in_the_hole",
+          0,
+          0,
+          "",
+          0,
+          0,
+          0,
+          0,
+          0,
+          notes,
+          quote.due_date,
+          null,
+        ]
+      );
+
+      await dbRun(
+        `
+          UPDATE quotes
+          SET status = 'converted',
+              converted_job_id = ?,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `,
+        [jobResult.lastID, quoteId]
+      );
+
+      await dbRun("COMMIT");
+
+      res.status(201).json({
+        ok: true,
+        quote_id: quoteId,
+        job_id: jobResult.lastID,
+        order_number: orderNumber,
+      });
+    } catch (err) {
+      await dbRun("ROLLBACK");
+      throw err;
+    }
+  } catch (err) {
+    console.error("Error converting quote to order:", err.message);
+    res.status(500).json({ error: "Failed to convert quote to order" });
   }
 });
 

@@ -274,6 +274,43 @@ async function saveQuote() {
   }
 }
 
+async function convertQuoteToOrder(quoteId, button) {
+  clearQuoteError();
+
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Converting...";
+  }
+
+  try {
+    const response = await fetch(`/api/quotes/${quoteId}/convert-to-order`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const converted = await parseApiResponse(
+      response,
+      "Failed to convert quote"
+    );
+
+    quoteSummaryContent.innerHTML = `
+      <p class="quote-muted">
+        Converted quote #${escapeHtml(converted.quote_id)} to order
+        #${escapeHtml(converted.order_number)}.
+      </p>
+    `;
+
+    await loadQuotes();
+  } catch (error) {
+    showQuoteError(error.message);
+
+    if (button) {
+      button.disabled = false;
+      button.textContent = "Convert";
+    }
+  }
+}
+
 async function loadQuotes() {
   if (!quoteList) return;
 
@@ -289,15 +326,38 @@ async function loadQuotes() {
     quoteList.innerHTML = quotes
       .slice(0, 8)
       .map(
-        (quote) => `
+        (quote) => {
+          const isConverted = quote.status === "converted" || quote.converted_job_id;
+
+          return `
           <article class="quote-draft-card">
             <h3>#${escapeHtml(quote.id)} ${escapeHtml(quote.customer_name)}</h3>
             <p>${escapeHtml(quote.total_quantity)} shirts - ${formatMoney(quote.total_price_cents)}</p>
             <p>${formatMoney(quote.price_per_shirt_cents)} each - Profit ${formatMoney(quote.profit_cents)}</p>
+            ${
+              isConverted
+                ? `<p>Converted to job #${escapeHtml(quote.converted_job_id)}</p>`
+                : `
+                  <button
+                    type="button"
+                    class="secondary-btn quote-convert-btn"
+                    data-quote-id="${escapeHtml(quote.id)}"
+                  >
+                    Convert
+                  </button>
+                `
+            }
           </article>
-        `
+        `;
+        }
       )
       .join("");
+
+    quoteList.querySelectorAll(".quote-convert-btn").forEach((button) => {
+      button.addEventListener("click", async () => {
+        await convertQuoteToOrder(button.dataset.quoteId, button);
+      });
+    });
   } catch (error) {
     quoteList.innerHTML = `<p class="quote-muted">${escapeHtml(error.message)}</p>`;
   }
