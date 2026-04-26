@@ -18,10 +18,12 @@ const quoteSearch = document.getElementById("quote-search");
 const quoteStatusFilter = document.getElementById("quote-status-filter");
 const calculateQuoteBtn = document.getElementById("calculate-quote-btn");
 const saveQuoteBtn = document.getElementById("save-quote-btn");
+const cancelEditQuoteBtn = document.getElementById("cancel-edit-quote-btn");
 
 let isSavingQuote = false;
 let isCalculatingQuote = false;
 let quoteSearchTimer = null;
+let editingQuoteId = null;
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -237,9 +239,18 @@ function setBusyState() {
     calculateQuoteBtn.textContent = isCalculatingQuote ? "Calculating..." : "Calculate";
   }
 
+  if (cancelEditQuoteBtn) {
+    cancelEditQuoteBtn.hidden = !editingQuoteId;
+    cancelEditQuoteBtn.disabled = isCalculatingQuote || isSavingQuote;
+  }
+
   if (saveQuoteBtn) {
     saveQuoteBtn.disabled = isCalculatingQuote || isSavingQuote;
-    saveQuoteBtn.textContent = isSavingQuote ? "Saving..." : "Save Draft";
+    saveQuoteBtn.textContent = isSavingQuote
+      ? "Saving..."
+      : editingQuoteId
+        ? "Update Draft"
+        : "Save Draft";
   }
 }
 
@@ -294,23 +305,114 @@ async function saveQuote() {
   setBusyState();
 
   try {
-    const response = await fetch("/api/quotes", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(getQuotePayload()),
-    });
+    const response = await fetch(
+      editingQuoteId ? `/api/quotes/${editingQuoteId}` : "/api/quotes",
+      {
+        method: editingQuoteId ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(getQuotePayload()),
+      }
+    );
 
-    const saved = await parseApiResponse(response, "Failed to save quote");
+    const saved = await parseApiResponse(
+      response,
+      editingQuoteId ? "Failed to update quote" : "Failed to save quote"
+    );
 
-    quoteForm?.reset();
-    renderSizeInputs();
-    quoteSummaryContent.innerHTML = `<p class="quote-muted">Saved draft quote #${escapeHtml(saved.id)}.</p>`;
+    const savedId = saved.id;
+    resetQuoteForm();
+    quoteSummaryContent.innerHTML = `<p class="quote-muted">Saved draft quote #${escapeHtml(savedId)}.</p>`;
     await loadQuotes();
+    await loadQuoteDetail(savedId);
   } catch (error) {
     showQuoteError(error.message);
   } finally {
     isSavingQuote = false;
     setBusyState();
+  }
+}
+
+function setFormValue(name, value) {
+  const field = quoteForm?.elements?.[name];
+
+  if (field) {
+    field.value = value ?? "";
+  }
+}
+
+function resetQuoteForm() {
+  editingQuoteId = null;
+  quoteForm?.reset();
+  renderSizeInputs();
+  clearQuoteError();
+  setBusyState();
+}
+
+function ensureBlankOption(item) {
+  if (!blankSelect || !item?.shirt_blank_id) return;
+
+  const value = String(item.shirt_blank_id);
+
+  if (blankSelect.querySelector(`option[value="${CSS.escape(value)}"]`)) {
+    return;
+  }
+
+  const option = document.createElement("option");
+  option.value = value;
+  option.textContent = item.blank_label || `Blank #${value}`;
+  blankSelect.append(option);
+}
+
+async function editQuoteDraft(quoteId) {
+  clearQuoteError();
+
+  try {
+    const response = await fetch(`/api/quotes/${quoteId}`);
+    const quote = await parseApiResponse(response, "Failed to load quote");
+
+    if (quote.status !== "draft" || quote.converted_job_id) {
+      throw new Error("Only draft quotes can be edited");
+    }
+
+    const item = quote.items?.[0];
+
+    if (!item) {
+      throw new Error("Quote has no item to edit");
+    }
+
+    editingQuoteId = quote.id;
+    ensureBlankOption(item);
+    setFormValue("customer_name", quote.customer_name);
+    setFormValue("customer_email", quote.customer_email);
+    setFormValue("customer_phone", quote.customer_phone);
+    setFormValue("due_date", quote.due_date);
+    setFormValue("notes", quote.notes);
+    setFormValue("shirt_blank_id", item.shirt_blank_id);
+    setFormValue("color", item.color);
+    setFormValue("print_type", item.print_type);
+
+    document.querySelectorAll('input[name="placements"]').forEach((input) => {
+      input.checked = (item.placements || []).includes(input.value);
+    });
+
+    renderSizeInputs();
+
+    (item.sizes || []).forEach((size) => {
+      const input = sizeGrid?.querySelector(
+        `input[data-size="${CSS.escape(size.size_label)}"]`
+      );
+
+      if (input) {
+        input.value = size.quantity;
+      }
+    });
+
+    updateQuantityTotal();
+    quoteSummaryContent.innerHTML = `<p class="quote-muted">Editing draft quote #${escapeHtml(quote.id)}.</p>`;
+    setBusyState();
+    quoteForm?.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (error) {
+    showQuoteError(error.message);
   }
 }
 
@@ -356,6 +458,7 @@ function renderQuoteDetail(quote) {
   if (!quoteDetail) return;
 
   const item = quote.items?.[0];
+  const canEdit = quote.status === "draft" && !quote.converted_job_id;
   const placements = (item?.placements || [])
     .map((placement) =>
       String(placement)
@@ -388,6 +491,19 @@ function renderQuoteDetail(quote) {
       <a class="secondary-btn quote-output-link" href="/quote/${escapeHtml(quote.id)}" target="_blank" rel="noopener">
         Customer View
       </a>
+      ${
+        canEdit
+          ? `
+            <button
+              type="button"
+              class="secondary-btn quote-edit-btn"
+              data-quote-id="${escapeHtml(quote.id)}"
+            >
+              Edit Draft
+            </button>
+          `
+          : ""
+      }
     </div>
 
     <div class="quote-total-row">
@@ -433,6 +549,10 @@ function renderQuoteDetail(quote) {
         : ""
     }
   `;
+
+  quoteDetail.querySelector(".quote-edit-btn")?.addEventListener("click", async (event) => {
+    await editQuoteDraft(event.currentTarget.dataset.quoteId);
+  });
 }
 
 async function loadQuoteDetail(quoteId) {
@@ -495,6 +615,7 @@ async function loadQuotes() {
         (quote) => {
           const isConverted = quote.status === "converted" || quote.converted_job_id;
           const isArchived = quote.status === "archived";
+          const canEdit = quote.status === "draft" && !quote.converted_job_id;
 
           return `
           <article class="quote-draft-card">
@@ -523,6 +644,19 @@ async function loadQuotes() {
               >
                 Customer
               </a>
+              ${
+                canEdit
+                  ? `
+                    <button
+                      type="button"
+                      class="secondary-btn quote-edit-btn"
+                      data-quote-id="${escapeHtml(quote.id)}"
+                    >
+                      Edit
+                    </button>
+                  `
+                  : ""
+              }
               ${
                 !isConverted
                   ? `
@@ -569,6 +703,12 @@ async function loadQuotes() {
       });
     });
 
+    quoteList.querySelectorAll(".quote-edit-btn").forEach((button) => {
+      button.addEventListener("click", async () => {
+        await editQuoteDraft(button.dataset.quoteId);
+      });
+    });
+
     quoteList.querySelectorAll(".quote-status-btn").forEach((button) => {
       button.addEventListener("click", async () => {
         await updateQuoteStatus(
@@ -594,6 +734,11 @@ calculateQuoteBtn?.addEventListener("click", async () => {
 quoteForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   await saveQuote();
+});
+
+cancelEditQuoteBtn?.addEventListener("click", () => {
+  resetQuoteForm();
+  quoteSummaryContent.innerHTML = `<p class="quote-muted">Calculate a quote to preview pricing.</p>`;
 });
 
 quoteSearch?.addEventListener("input", () => {

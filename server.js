@@ -779,6 +779,74 @@ function buildNotesFromQuote(quote, item) {
   return notes.join("\n");
 }
 
+async function saveQuoteSnapshotInOpenTransaction(quoteId, quoteInput, item, totals) {
+  const itemResult = await dbRun(
+    `
+      INSERT INTO quote_items (
+        quote_id,
+        shirt_blank_id,
+        blank_label,
+        blank_base_cost_cents,
+        color,
+        print_type,
+        placements_json,
+        total_quantity,
+        blank_cost_cents,
+        print_cost_cents,
+        setup_fee_cents,
+        total_price_cents,
+        price_per_shirt_cents,
+        profit_cents
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    [
+      quoteId,
+      item.shirt_blank_id,
+      item.blank_label,
+      item.blank_base_cost_cents,
+      item.color,
+      item.print_type,
+      item.placements_json,
+      item.total_quantity,
+      item.blank_cost_cents,
+      item.print_cost_cents,
+      item.setup_fee_cents,
+      item.total_price_cents,
+      item.price_per_shirt_cents,
+      item.profit_cents,
+    ]
+  );
+
+  for (const size of item.sizes) {
+    await dbRun(
+      `
+        INSERT INTO quote_item_sizes (
+          quote_item_id,
+          size_label,
+          quantity,
+          blank_extra_cost_cents
+        )
+        VALUES (?, ?, ?, ?)
+      `,
+      [
+        itemResult.lastID,
+        size.size_label,
+        size.quantity,
+        size.blank_extra_cost_cents,
+      ]
+    );
+  }
+
+  return {
+    ok: true,
+    id: quoteId,
+    status: "draft",
+    totals,
+    customer_name: String(quoteInput.customer_name || "").trim(),
+  };
+}
+
 async function getNextOrderNumberInOpenTransaction() {
   const year = new Date().getFullYear();
   const counterName = getOrderCounterName(year);
@@ -1608,10 +1676,6 @@ app.post("/api/quotes", async (req, res) => {
   }
 
   try {
-    const calculation = await calculateQuote(quoteInput);
-    const item = calculation.item;
-    const totals = calculation.totals;
-
     await dbRun("BEGIN IMMEDIATE TRANSACTION");
 
     try {
@@ -1652,71 +1716,17 @@ app.post("/api/quotes", async (req, res) => {
       );
 
       const quoteId = quoteResult.lastID;
-      const itemResult = await dbRun(
-        `
-          INSERT INTO quote_items (
-            quote_id,
-            shirt_blank_id,
-            blank_label,
-            blank_base_cost_cents,
-            color,
-            print_type,
-            placements_json,
-            total_quantity,
-            blank_cost_cents,
-            print_cost_cents,
-            setup_fee_cents,
-            total_price_cents,
-            price_per_shirt_cents,
-            profit_cents
-          )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `,
-        [
-          quoteId,
-          item.shirt_blank_id,
-          item.blank_label,
-          item.blank_base_cost_cents,
-          item.color,
-          item.print_type,
-          item.placements_json,
-          item.total_quantity,
-          item.blank_cost_cents,
-          item.print_cost_cents,
-          item.setup_fee_cents,
-          item.total_price_cents,
-          item.price_per_shirt_cents,
-          item.profit_cents,
-        ]
+      const savedQuote = await saveQuoteSnapshotInOpenTransaction(
+        quoteId,
+        quoteInput,
+        item,
+        totals
       );
-
-      for (const size of item.sizes) {
-        await dbRun(
-          `
-            INSERT INTO quote_item_sizes (
-              quote_item_id,
-              size_label,
-              quantity,
-              blank_extra_cost_cents
-            )
-            VALUES (?, ?, ?, ?)
-          `,
-          [
-            itemResult.lastID,
-            size.size_label,
-            size.quantity,
-            size.blank_extra_cost_cents,
-          ]
-        );
-      }
 
       await dbRun("COMMIT");
 
       res.status(201).json({
-        ok: true,
-        id: quoteId,
-        status: "draft",
-        totals,
+        ...savedQuote,
       });
     } catch (err) {
       await dbRun("ROLLBACK");
@@ -1726,6 +1736,137 @@ app.post("/api/quotes", async (req, res) => {
     console.error("Error saving quote:", err.message);
     res.status(err.status || 500).json({
       error: err.status ? err.message : "Failed to save quote",
+    });
+  }
+});
+
+// =====================
+// Routes - Update Quote Draft
+// Purpose:
+// - Recalculates and replaces a draft quote snapshot
+// - Converted and archived quotes stay locked
+// =====================
+app.patch("/api/quotes/:id", async (req, res) => {
+  const quoteId = Number(req.params.id);
+  const quoteInput = req.body || {};
+  const customerName = String(quoteInput.customer_name || "").trim();
+
+  if (!Number.isInteger(quoteId) || quoteId < 1) {
+    return res.status(400).json({ error: "Valid quote id is required" });
+  }
+
+  if (!customerName) {
+    return res.status(400).json({ error: "Customer name is required" });
+  }
+
+  try {
+    const calculation = await calculateQuote(quoteInput);
+    const item = calculation.item;
+    const totals = calculation.totals;
+
+    await dbRun("BEGIN IMMEDIATE TRANSACTION");
+
+    try {
+      const existingQuote = await dbGet(
+        `
+          SELECT id, status, converted_job_id
+          FROM quotes
+          WHERE id = ?
+        `,
+        [quoteId]
+      );
+
+      if (!existingQuote) {
+        await dbRun("ROLLBACK");
+        return res.status(404).json({ error: "Quote not found" });
+      }
+
+      if (existingQuote.status !== "draft" || existingQuote.converted_job_id) {
+        await dbRun("ROLLBACK");
+        return res.status(409).json({ error: "Only draft quotes can be edited" });
+      }
+
+      const calculation = await calculateQuote(quoteInput);
+      const item = calculation.item;
+      const totals = calculation.totals;
+
+      const existingItems = await dbAll(
+        `
+          SELECT id
+          FROM quote_items
+          WHERE quote_id = ?
+        `,
+        [quoteId]
+      );
+
+      if (existingItems.length) {
+        const placeholders = existingItems.map(() => "?").join(", ");
+        await dbRun(
+          `
+            DELETE FROM quote_item_sizes
+            WHERE quote_item_id IN (${placeholders})
+          `,
+          existingItems.map((quoteItem) => quoteItem.id)
+        );
+      }
+
+      await dbRun(`DELETE FROM quote_items WHERE quote_id = ?`, [quoteId]);
+
+      await dbRun(
+        `
+          UPDATE quotes
+          SET customer_name = ?,
+              customer_email = ?,
+              customer_phone = ?,
+              due_date = ?,
+              notes = ?,
+              total_quantity = ?,
+              blank_cost_cents = ?,
+              print_cost_cents = ?,
+              setup_fee_cents = ?,
+              total_price_cents = ?,
+              price_per_shirt_cents = ?,
+              profit_cents = ?,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `,
+        [
+          customerName,
+          String(quoteInput.customer_email || "").trim(),
+          String(quoteInput.customer_phone || "").trim(),
+          normalizeDueDate(quoteInput.due_date),
+          String(quoteInput.notes || "").trim(),
+          totals.total_quantity,
+          totals.blank_cost_cents,
+          totals.print_cost_cents,
+          totals.setup_fee_cents,
+          totals.total_price_cents,
+          totals.price_per_shirt_cents,
+          totals.profit_cents,
+          quoteId,
+        ]
+      );
+
+      const savedQuote = await saveQuoteSnapshotInOpenTransaction(
+        quoteId,
+        quoteInput,
+        item,
+        totals
+      );
+
+      await dbRun("COMMIT");
+
+      res.json({
+        ...savedQuote,
+      });
+    } catch (err) {
+      await dbRun("ROLLBACK");
+      throw err;
+    }
+  } catch (err) {
+    console.error("Error updating quote:", err.message);
+    res.status(err.status || 500).json({
+      error: err.status ? err.message : "Failed to update quote",
     });
   }
 });
