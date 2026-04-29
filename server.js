@@ -105,7 +105,7 @@ function seedDtfVolumePricingRules() {
 
   Object.entries(dtfPlacementCosts).forEach(([placement, printCostCents]) => {
     dtfSaleTiers.forEach(([minQuantity, maxQuantity, salePriceCents]) => {
-      seedPrintPricingRule([
+      const rule = [
         "DTF",
         placement,
         minQuantity,
@@ -113,9 +113,97 @@ function seedDtfVolumePricingRules() {
         0,
         printCostCents,
         salePriceCents,
-      ]);
+      ];
+
+      db.run(
+        `
+          UPDATE print_pricing_rules
+          SET setup_fee_cents = ?,
+              print_cost_per_shirt_cents = ?,
+              print_price_per_shirt_cents = ?,
+              active = 1,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE print_type = ?
+            AND placement = ?
+            AND min_quantity = ?
+            AND (
+              (max_quantity IS NULL AND ? IS NULL)
+              OR max_quantity = ?
+            )
+        `,
+        [
+          rule[4],
+          rule[5],
+          rule[6],
+          rule[0],
+          rule[1],
+          rule[2],
+          rule[3],
+          rule[3],
+        ],
+        function (err) {
+          if (err) {
+            console.error("Error updating DTF pricing rule:", err.message);
+            return;
+          }
+
+          if (this.changes === 0) {
+            seedPrintPricingRule(rule);
+          }
+        }
+      );
     });
   });
+}
+
+function ensureDtfVolumePricingRules() {
+  const requiredTierCount = 4 * 6;
+
+  db.run(
+    `
+      UPDATE print_pricing_rules
+      SET active = 0,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE print_type = 'DTF'
+        AND min_quantity = 1
+        AND max_quantity = 999999
+    `,
+    (err) => {
+      if (err) {
+        console.error("Error deactivating broad DTF pricing rules:", err.message);
+      }
+    }
+  );
+
+  db.get(
+    `
+      SELECT COUNT(
+        DISTINCT placement || ':' || min_quantity || ':' || COALESCE(max_quantity, 'NULL')
+      ) AS count
+      FROM print_pricing_rules
+      WHERE active = 1
+        AND print_type = 'DTF'
+        AND placement IN ('left_chest', 'full_front', 'full_back', 'sleeve')
+        AND (
+          (min_quantity = 1 AND max_quantity = 4 AND print_price_per_shirt_cents = 2000)
+          OR (min_quantity = 5 AND max_quantity = 9 AND print_price_per_shirt_cents = 1700)
+          OR (min_quantity = 10 AND max_quantity = 24 AND print_price_per_shirt_cents = 1500)
+          OR (min_quantity = 25 AND max_quantity = 49 AND print_price_per_shirt_cents = 1200)
+          OR (min_quantity = 50 AND max_quantity = 99 AND print_price_per_shirt_cents = 1100)
+          OR (min_quantity = 100 AND max_quantity IS NULL AND print_price_per_shirt_cents = 1000)
+        )
+    `,
+    (err, row) => {
+      if (err) {
+        console.error("Error checking DTF volume pricing rules:", err.message);
+        return;
+      }
+
+      if (Number(row?.count) < requiredTierCount) {
+        seedDtfVolumePricingRules();
+      }
+    }
+  );
 }
 
 db.serialize(() => {
@@ -413,7 +501,7 @@ db.serialize(() => {
     );
 
     if (!maxQuantityColumn || Number(maxQuantityColumn.notnull) !== 1) {
-      seedDtfVolumePricingRules();
+      ensureDtfVolumePricingRules();
       return;
     }
 
@@ -515,7 +603,7 @@ db.serialize(() => {
                           }
 
                           console.log("Updated print_pricing_rules to allow open-ended max_quantity.");
-                          seedDtfVolumePricingRules();
+                          ensureDtfVolumePricingRules();
                         });
                       }
                     );
