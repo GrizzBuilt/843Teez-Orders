@@ -33,8 +33,11 @@ item.placement_breakdown[0].print_price_per_shirt_cents
 Sell-price behavior:
 
 - `print_price_per_shirt_cents` is the final customer sell price per shirt.
-- `total_price_cents` equals `price_per_shirt_cents * total_quantity`.
+- `total_price_cents` equals `price_per_shirt_cents * total_quantity`, plus
+  any size upcharges from `shirt_blank_size_costs.extra_cost_cents`.
 - Blank cost and print cost stay internal-only cost tracking fields.
 - Multiple placements add internal print/setup cost, but do not multiply the
   customer sell price. If selected placements have different sell prices, the
   highest matching per-shirt sell price is used once for the order.
+- A 10-shirt quote at $15.00 each with two 2XL shirts and a $2.00 2XL upcharge
+  should total $154.00: `(1500 * 10) + (200 * 2)`.

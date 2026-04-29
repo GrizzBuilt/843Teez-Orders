@@ -1230,19 +1230,23 @@ async function calculateQuote(input) {
   );
 
   let blankCostCents = 0;
+  let sizeUpchargeCents = 0;
 
   const calculatedSizes = sizes.map((size) => {
     const blankExtraCostCents = sizeCostMap.get(size.size_label) || 0;
+    const lineSizeUpchargeCents = blankExtraCostCents * size.quantity;
     const lineCostCents =
       (normalizeMoneyCents(blank.base_cost_cents) + blankExtraCostCents) *
       size.quantity;
 
     blankCostCents += lineCostCents;
+    sizeUpchargeCents += lineSizeUpchargeCents;
 
     return {
       ...size,
       blank_extra_cost_cents: blankExtraCostCents,
       line_cost_cents: lineCostCents,
+      size_upcharge_cents: lineSizeUpchargeCents,
     };
   });
 
@@ -1307,7 +1311,7 @@ async function calculateQuote(input) {
     placement.selected_price_rule = placement.rule_id === selectedPriceRuleId;
   });
 
-  const totalPriceCents = pricePerShirtCents * totalQuantity;
+  const totalPriceCents = pricePerShirtCents * totalQuantity + sizeUpchargeCents;
   const profitCents =
     totalPriceCents - blankCostCents - printCostCents - setupFeeCents;
 
