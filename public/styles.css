@@ -761,47 +761,103 @@ body.dark-mode .checkbox-card:has(input:checked) {
   .topbar {
     flex-direction: column;
     align-items: stretch;
-    padding: 14px;
+    gap: 12px;
+    padding: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 30;
   }
 
   .topbar h1 {
-    font-size: 1.45rem;
+    font-size: 1.35rem;
+    line-height: 1.15;
+  }
+
+  .subtitle {
+    font-size: 0.86rem;
   }
 
   .topbar-actions {
-    justify-content: space-between;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    align-items: stretch;
+  }
+
+  .topbar-actions .secondary-btn,
+  .topbar-actions .theme-toggle-btn,
+  .topbar-actions .add-btn,
+  .topbar-actions .board-link-btn,
+  .topbar-actions .toggle {
+    width: 100%;
+    min-height: 42px;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .topbar-actions .toggle {
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: var(--radius-sm);
+    background: rgba(255, 255, 255, 0.1);
+    padding: 10px 12px;
+    backdrop-filter: blur(6px);
   }
 
   .board {
     display: flex !important;
     overflow-x: auto;
     gap: 12px;
-    padding: 12px;
-    height: calc(100vh - 145px);
+    padding: 12px 12px calc(18px + env(safe-area-inset-bottom));
+    min-height: calc(100dvh - 176px);
+    height: auto;
     scroll-snap-type: x mandatory;
+    scroll-padding-inline: 12px;
+    -webkit-overflow-scrolling: touch;
   }
 
   .column {
-    min-width: 85%;
-    max-width: 85%;
+    min-width: min(88vw, 390px);
+    max-width: min(88vw, 390px);
+    min-height: calc(100dvh - 205px);
     flex-shrink: 0;
     scroll-snap-align: start;
+    padding: 10px;
   }
 
   .column-header {
     position: sticky;
     top: 0;
     z-index: 5;
+    align-items: center;
+    min-height: 44px;
   }
 
   .order-card {
-    padding: 10px;
+    padding: 12px !important;
+    border-radius: 12px;
+  }
+
+  .compact-card-top {
+    align-items: flex-start;
+  }
+
+  .card-top-actions {
+    gap: 6px;
   }
 
   .card-actions button {
-    padding: 12px;
+    min-height: 42px;
+    padding: 10px;
     font-size: 15px;
+  }
+
+  .quick-flags {
+    gap: 6px;
+  }
+
+  .quick-flag-btn {
+    min-height: 32px;
+    padding: 6px 9px;
   }
 
   .board::-webkit-scrollbar {
@@ -816,11 +872,15 @@ body.dark-mode .checkbox-card:has(input:checked) {
   .modal {
     border-radius: 18px 18px 0 0;
     max-width: none;
-    max-height: 92vh;
+    max-height: 96dvh;
+    min-height: min(720px, 88dvh);
   }
 
   .modal-header {
     padding: 16px 16px 14px;
+    position: sticky;
+    top: 0;
+    z-index: 2;
   }
 
   .modal-body {
@@ -844,11 +904,29 @@ body.dark-mode .checkbox-card:has(input:checked) {
     padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
     position: sticky;
     bottom: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .form-actions .secondary-btn,
   .form-actions .add-btn {
-    flex: 1;
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 420px) {
+  .topbar-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .board {
+    min-height: calc(100dvh - 260px);
+  }
+
+  .column {
+    min-width: calc(100vw - 24px);
+    max-width: calc(100vw - 24px);
   }
 }
 
