@@ -20,6 +20,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const DB_DIR = path.join(__dirname, "db");
 const DB_PATH = path.join(DB_DIR, "orders.db");
+const BASE_PRICING_BLANK_BRAND =
+  process.env.BASE_PRICING_BLANK_BRAND || "Port and Co";
 const BASE_PRICING_BLANK_STYLE_NUMBER =
   process.env.BASE_PRICING_BLANK_STYLE_NUMBER || "PC43";
 const ALLOW_BLANK_PRICE_REDUCTION =
@@ -444,7 +446,7 @@ db.serialize(() => {
   );
 
   [
-    ["Port & Company", "PC43", "Basic Tee", "Go-to tee for quote pricing", 300],
+    ["Port and Co", "PC43", "Basic Tee", "Go-to tee for quote pricing", 300],
     ["Gildan", "5000", "Heavy Cotton Tee", "Budget-friendly everyday tee", 325],
     ["Gildan", "64000", "Softstyle Tee", "Softer retail-feel tee", 425],
     ["Bella+Canvas", "3001", "Unisex Jersey Tee", "Premium retail tee", 625],
@@ -483,6 +485,28 @@ db.serialize(() => {
     (err) => {
       if (err) {
         console.error("Error updating PC43 seed label:", err.message);
+      }
+    }
+  );
+
+  db.run(
+    `
+      UPDATE shirt_blanks
+      SET active = 0,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE brand = ?
+        AND style_number = ?
+        AND EXISTS (
+          SELECT 1
+          FROM shirt_blanks
+          WHERE brand = ?
+            AND style_number = ?
+        )
+    `,
+    ["Port & Company", "PC43", BASE_PRICING_BLANK_BRAND, BASE_PRICING_BLANK_STYLE_NUMBER],
+    (err) => {
+      if (err) {
+        console.error("Error deactivating duplicate PC43 seed blank:", err.message);
       }
     }
   );
@@ -1371,16 +1395,17 @@ async function calculateQuote(input) {
       SELECT *
       FROM shirt_blanks
       WHERE active = 1
+        AND UPPER(brand) = UPPER(?)
         AND UPPER(style_number) = UPPER(?)
       ORDER BY id ASC
       LIMIT 1
     `,
-    [BASE_PRICING_BLANK_STYLE_NUMBER]
+    [BASE_PRICING_BLANK_BRAND, BASE_PRICING_BLANK_STYLE_NUMBER]
   );
 
   if (!basePricingBlank) {
     const error = new Error(
-      `Base pricing blank ${BASE_PRICING_BLANK_STYLE_NUMBER} not found. Add it in Pricing Admin before calculating quotes.`
+      `Base pricing blank ${BASE_PRICING_BLANK_BRAND} ${BASE_PRICING_BLANK_STYLE_NUMBER} not found. Add it in Pricing Admin before calculating quotes.`
     );
     error.status = 400;
     throw error;
@@ -1548,6 +1573,7 @@ async function calculateQuote(input) {
     totalQuantity,
     basePricePerShirtCents,
     baseTierPricePerShirtCents: basePricePerShirtCents,
+    basePricingBlankBrand: BASE_PRICING_BLANK_BRAND,
     basePricingBlankStyleNumber: BASE_PRICING_BLANK_STYLE_NUMBER,
     basePricingBlankCostCents,
     selectedBlankBaseCostCents,
@@ -1903,11 +1929,13 @@ app.patch("/api/pricing/shirt-blanks/:id/active", async (req, res) => {
 
     if (
       active === 0 &&
+      String(blank.brand || "").toUpperCase() ===
+        BASE_PRICING_BLANK_BRAND.toUpperCase() &&
       String(blank.style_number || "").toUpperCase() ===
         BASE_PRICING_BLANK_STYLE_NUMBER.toUpperCase()
     ) {
       return res.status(400).json({
-        error: `${BASE_PRICING_BLANK_STYLE_NUMBER} is the base pricing blank and cannot be deactivated`,
+        error: `${BASE_PRICING_BLANK_BRAND} ${BASE_PRICING_BLANK_STYLE_NUMBER} is the base pricing blank and cannot be deactivated`,
       });
     }
 
@@ -1950,11 +1978,13 @@ app.delete("/api/pricing/shirt-blanks/:id", async (req, res) => {
     }
 
     if (
+      String(blank.brand || "").toUpperCase() ===
+        BASE_PRICING_BLANK_BRAND.toUpperCase() &&
       String(blank.style_number || "").toUpperCase() ===
       BASE_PRICING_BLANK_STYLE_NUMBER.toUpperCase()
     ) {
       return res.status(400).json({
-        error: `${BASE_PRICING_BLANK_STYLE_NUMBER} is the base pricing blank and cannot be deleted`,
+        error: `${BASE_PRICING_BLANK_BRAND} ${BASE_PRICING_BLANK_STYLE_NUMBER} is the base pricing blank and cannot be deleted`,
       });
     }
 

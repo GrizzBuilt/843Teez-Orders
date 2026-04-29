@@ -37,9 +37,10 @@ Sell-price behavior:
   any size upcharges from `shirt_blank_size_costs.extra_cost_cents`.
 - Blank cost and print cost stay internal-only cost tracking fields.
 - Customer sale price tiers are based on the configured base pricing blank,
-  default `PC43`. If the selected blank costs more than PC43, the difference is
-  added per shirt as `blankUpgradePerShirtCents`. If it costs less than PC43,
-  the price is not reduced unless `ALLOW_BLANK_PRICE_REDUCTION=1` is configured.
+  default `Port and Co PC43`. If the selected blank costs more than that PC43,
+  the difference is added per shirt as `blankUpgradePerShirtCents`. If it costs
+  less than PC43, the price is not reduced unless
+  `ALLOW_BLANK_PRICE_REDUCTION=1` is configured.
 - Multiple base placements add internal print/setup cost, but do not multiply
   the customer sell price. If selected base placements have different sell
   prices, the highest matching per-shirt sell price is used once for the order.
