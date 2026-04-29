@@ -1099,7 +1099,8 @@ async function calculateQuote(input) {
 
   let printCostCents = 0;
   let setupFeeCents = 0;
-  let printPriceCents = 0;
+  let pricePerShirtCents = 0;
+  let selectedPriceRuleId = null;
   const calculatedPlacements = [];
 
   for (const placement of placements) {
@@ -1129,13 +1130,17 @@ async function calculateQuote(input) {
     const ruleSetupFeeCents = normalizeMoneyCents(rule.setup_fee_cents);
     const rulePrintCostCents =
       normalizeMoneyCents(rule.print_cost_per_shirt_cents) * totalQuantity;
-    const rulePrintPriceCents =
-      ruleSetupFeeCents +
-      normalizeMoneyCents(rule.print_price_per_shirt_cents) * totalQuantity;
+    const rulePricePerShirtCents = normalizeMoneyCents(
+      rule.print_price_per_shirt_cents
+    );
 
     setupFeeCents += ruleSetupFeeCents;
     printCostCents += rulePrintCostCents;
-    printPriceCents += rulePrintPriceCents;
+
+    if (!selectedPriceRuleId || rulePricePerShirtCents > pricePerShirtCents) {
+      selectedPriceRuleId = rule.id;
+      pricePerShirtCents = rulePricePerShirtCents;
+    }
 
     calculatedPlacements.push({
       placement,
@@ -1143,14 +1148,17 @@ async function calculateQuote(input) {
       rule_id: rule.id,
       setup_fee_cents: ruleSetupFeeCents,
       print_cost_per_shirt_cents: normalizeMoneyCents(rule.print_cost_per_shirt_cents),
-      print_price_per_shirt_cents: normalizeMoneyCents(rule.print_price_per_shirt_cents),
+      print_price_per_shirt_cents: rulePricePerShirtCents,
       print_cost_cents: rulePrintCostCents,
-      print_price_cents: rulePrintPriceCents,
+      print_price_cents: rulePricePerShirtCents * totalQuantity,
     });
   }
 
-  const totalPriceCents = blankCostCents + printPriceCents;
-  const pricePerShirtCents = Math.ceil(totalPriceCents / totalQuantity);
+  calculatedPlacements.forEach((placement) => {
+    placement.selected_price_rule = placement.rule_id === selectedPriceRuleId;
+  });
+
+  const totalPriceCents = pricePerShirtCents * totalQuantity;
   const profitCents = totalPriceCents - blankCostCents - printCostCents;
 
   return {

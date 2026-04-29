@@ -29,3 +29,12 @@ The selected rule is visible in the `/api/quotes/calculate` response at:
 item.placement_breakdown[0].rule_id
 item.placement_breakdown[0].print_price_per_shirt_cents
 ```
+
+Sell-price behavior:
+
+- `print_price_per_shirt_cents` is the final customer sell price per shirt.
+- `total_price_cents` equals `price_per_shirt_cents * total_quantity`.
+- Blank cost and print cost stay internal-only cost tracking fields.
+- Multiple placements add internal print/setup cost, but do not multiply the
+  customer sell price. If selected placements have different sell prices, the
+  highest matching per-shirt sell price is used once for the order.
