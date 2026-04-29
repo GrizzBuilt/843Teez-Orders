@@ -36,6 +36,88 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
   }
 });
 
+function seedPrintPricingRule(rule) {
+  db.run(
+    `
+      INSERT INTO print_pricing_rules (
+        print_type,
+        placement,
+        min_quantity,
+        max_quantity,
+        setup_fee_cents,
+        print_cost_per_shirt_cents,
+        print_price_per_shirt_cents
+      )
+      SELECT ?, ?, ?, ?, ?, ?, ?
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM print_pricing_rules
+        WHERE print_type = ?
+          AND placement = ?
+          AND min_quantity = ?
+          AND (
+            (max_quantity IS NULL AND ? IS NULL)
+            OR max_quantity = ?
+          )
+      )
+    `,
+    [...rule, rule[0], rule[1], rule[2], rule[3], rule[3]],
+    (err) => {
+      if (err) {
+        console.error("Error seeding print pricing rule:", err.message);
+      }
+    }
+  );
+}
+
+function seedDtfVolumePricingRules() {
+  db.run(
+    `
+      UPDATE print_pricing_rules
+      SET active = 0,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE print_type = 'DTF'
+        AND min_quantity = 1
+        AND max_quantity = 999999
+    `,
+    (err) => {
+      if (err) {
+        console.error("Error deactivating broad DTF pricing rules:", err.message);
+      }
+    }
+  );
+
+  const dtfPlacementCosts = {
+    left_chest: 150,
+    full_front: 250,
+    full_back: 350,
+    sleeve: 125,
+  };
+
+  const dtfSaleTiers = [
+    [1, 4, 2000],
+    [5, 9, 1700],
+    [10, 24, 1500],
+    [25, 49, 1200],
+    [50, 99, 1100],
+    [100, null, 1000],
+  ];
+
+  Object.entries(dtfPlacementCosts).forEach(([placement, printCostCents]) => {
+    dtfSaleTiers.forEach(([minQuantity, maxQuantity, salePriceCents]) => {
+      seedPrintPricingRule([
+        "DTF",
+        placement,
+        minQuantity,
+        maxQuantity,
+        0,
+        printCostCents,
+        salePriceCents,
+      ]);
+    });
+  });
+}
+
 db.serialize(() => {
   db.run(`
     CREATE TABLE IF NOT EXISTS jobs (
@@ -235,35 +317,12 @@ db.serialize(() => {
   });
 
   [
-    ["DTF", "left_chest", 1, 999999, 0, 150, 450],
-    ["DTF", "full_front", 1, 999999, 0, 250, 700],
-    ["DTF", "full_back", 1, 999999, 0, 350, 900],
-    ["DTF", "sleeve", 1, 999999, 0, 125, 350],
     ["Screen Print", "left_chest", 12, 999999, 2500, 75, 250],
     ["Screen Print", "full_front", 12, 999999, 2500, 125, 400],
     ["Screen Print", "full_back", 12, 999999, 2500, 175, 500],
     ["Screen Print", "sleeve", 12, 999999, 1500, 75, 225],
   ].forEach((rule) => {
-    db.run(
-      `
-        INSERT OR IGNORE INTO print_pricing_rules (
-          print_type,
-          placement,
-          min_quantity,
-          max_quantity,
-          setup_fee_cents,
-          print_cost_per_shirt_cents,
-          print_price_per_shirt_cents
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `,
-      rule,
-      (err) => {
-        if (err) {
-          console.error("Error seeding print pricing rule:", err.message);
-        }
-      }
-    );
+    seedPrintPricingRule(rule);
   });
 
   // =====================
@@ -354,6 +413,7 @@ db.serialize(() => {
     );
 
     if (!maxQuantityColumn || Number(maxQuantityColumn.notnull) !== 1) {
+      seedDtfVolumePricingRules();
       return;
     }
 
@@ -455,6 +515,7 @@ db.serialize(() => {
                           }
 
                           console.log("Updated print_pricing_rules to allow open-ended max_quantity.");
+                          seedDtfVolumePricingRules();
                         });
                       }
                     );
