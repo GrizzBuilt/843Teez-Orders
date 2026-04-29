@@ -1220,7 +1220,8 @@ async function calculateQuote(input) {
   });
 
   const totalPriceCents = pricePerShirtCents * totalQuantity;
-  const profitCents = totalPriceCents - blankCostCents - printCostCents;
+  const profitCents =
+    totalPriceCents - blankCostCents - printCostCents - setupFeeCents;
 
   return {
     item: {
@@ -1879,6 +1880,10 @@ app.post("/api/quotes", async (req, res) => {
   }
 
   try {
+    const calculation = await calculateQuote(quoteInput);
+    const item = calculation.item;
+    const totals = calculation.totals;
+
     await dbRun("BEGIN IMMEDIATE TRANSACTION");
 
     try {
@@ -1963,10 +1968,6 @@ app.patch("/api/quotes/:id", async (req, res) => {
   }
 
   try {
-    const calculation = await calculateQuote(quoteInput);
-    const item = calculation.item;
-    const totals = calculation.totals;
-
     await dbRun("BEGIN IMMEDIATE TRANSACTION");
 
     try {
