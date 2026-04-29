@@ -264,8 +264,7 @@ function ensureDtfVolumePricingRules() {
         DISTINCT placement || ':' || min_quantity || ':' || COALESCE(max_quantity, 'NULL')
       ) AS count
       FROM print_pricing_rules
-      WHERE active = 1
-        AND print_type = 'DTF'
+      WHERE print_type = 'DTF'
         AND placement IN ('left_chest', 'full_front', 'full_back', 'sleeve')
         AND (
           (min_quantity = 1 AND max_quantity = 4 AND print_price_per_shirt_cents = 2000)
@@ -1880,6 +1879,55 @@ app.patch("/api/pricing/shirt-blanks/:id", async (req, res) => {
   }
 });
 
+app.patch("/api/pricing/shirt-blanks/:id/active", async (req, res) => {
+  const blankId = Number(req.params.id);
+  const active = normalizeActive(req.body?.active);
+
+  if (!Number.isInteger(blankId) || blankId < 1) {
+    return res.status(400).json({ error: "Valid shirt blank id is required" });
+  }
+
+  try {
+    const blank = await dbGet(
+      `
+        SELECT *
+        FROM shirt_blanks
+        WHERE id = ?
+      `,
+      [blankId]
+    );
+
+    if (!blank) {
+      return res.status(404).json({ error: "Shirt blank not found" });
+    }
+
+    if (
+      active === 0 &&
+      String(blank.style_number || "").toUpperCase() ===
+        BASE_PRICING_BLANK_STYLE_NUMBER.toUpperCase()
+    ) {
+      return res.status(400).json({
+        error: `${BASE_PRICING_BLANK_STYLE_NUMBER} is the base pricing blank and cannot be deactivated`,
+      });
+    }
+
+    await dbRun(
+      `
+        UPDATE shirt_blanks
+        SET active = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `,
+      [active, blankId]
+    );
+
+    res.json({ ok: true, id: blankId, active });
+  } catch (err) {
+    console.error("Error updating pricing blank active state:", err.message);
+    res.status(500).json({ error: "Failed to update shirt blank active state" });
+  }
+});
+
 app.delete("/api/pricing/shirt-blanks/:id", async (req, res) => {
   const blankId = Number(req.params.id);
 
@@ -2092,6 +2140,36 @@ app.patch("/api/pricing/print-rules/:id", async (req, res) => {
         ? "A print pricing rule already exists for that type, placement, and quantity range"
         : "Failed to update print pricing rule",
     });
+  }
+});
+
+app.patch("/api/pricing/print-rules/:id/active", async (req, res) => {
+  const ruleId = Number(req.params.id);
+  const active = normalizeActive(req.body?.active);
+
+  if (!Number.isInteger(ruleId) || ruleId < 1) {
+    return res.status(400).json({ error: "Valid print rule id is required" });
+  }
+
+  try {
+    const result = await dbRun(
+      `
+        UPDATE print_pricing_rules
+        SET active = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `,
+      [active, ruleId]
+    );
+
+    if (result.changes === 0) {
+      return res.status(404).json({ error: "Print pricing rule not found" });
+    }
+
+    res.json({ ok: true, id: ruleId, active });
+  } catch (err) {
+    console.error("Error updating print rule active state:", err.message);
+    res.status(500).json({ error: "Failed to update print rule active state" });
   }
 });
 

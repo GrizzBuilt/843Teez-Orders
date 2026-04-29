@@ -259,6 +259,7 @@ function renderBlanks() {
 
   blankList.innerHTML = blanks
     .map((blank) => {
+      const isActive = Number(blank.active) === 1;
       const sizeSummary = PRICING_SIZES.filter(
         (size) => Number(blank.size_costs?.[size]) > 0
       )
@@ -272,9 +273,15 @@ function renderBlanks() {
               <h3>${escapeHtml(blank.brand)} ${escapeHtml(blank.style_number)}</h3>
               <p>${escapeHtml(blank.name)}</p>
             </div>
-            <span class="pricing-pill ${Number(blank.active) === 1 ? "" : "inactive"}">
-              ${Number(blank.active) === 1 ? "Active" : "Inactive"}
-            </span>
+            <button
+              type="button"
+              class="pricing-pill pricing-active-toggle ${isActive ? "" : "inactive"}"
+              data-blank-id="${escapeHtml(blank.id)}"
+              aria-pressed="${isActive ? "true" : "false"}"
+              title="${isActive ? "Deactivate blank" : "Activate blank"}"
+            >
+              ${isActive ? "Active" : "Inactive"}
+            </button>
           </div>
           <p>Base cost ${formatMoney(blank.base_cost_cents)}</p>
           <p>${escapeHtml(sizeSummary || "No size upcharges")}</p>
@@ -310,6 +317,14 @@ function renderBlanks() {
       deleteBlank(button.dataset.blankId);
     });
   });
+
+  blankList.querySelectorAll(".pricing-active-toggle[data-blank-id]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleBlankActive(button.dataset.blankId);
+    });
+  });
 }
 
 function renderRules() {
@@ -323,6 +338,7 @@ function renderRules() {
   ruleList.innerHTML = printRules
     .map(
       (rule) => {
+        const isActive = Number(rule.active) === 1;
         const quantityRange =
           rule.max_quantity == null
             ? `${escapeHtml(rule.min_quantity)}+ shirts`
@@ -335,9 +351,15 @@ function renderRules() {
               <h3>${escapeHtml(rule.print_type)} - ${escapeHtml(PLACEMENT_LABELS[rule.placement] || rule.placement)}</h3>
               <p>${quantityRange}</p>
             </div>
-            <span class="pricing-pill ${Number(rule.active) === 1 ? "" : "inactive"}">
-              ${Number(rule.active) === 1 ? "Active" : "Inactive"}
-            </span>
+            <button
+              type="button"
+              class="pricing-pill pricing-active-toggle ${isActive ? "" : "inactive"}"
+              data-rule-id="${escapeHtml(rule.id)}"
+              aria-pressed="${isActive ? "true" : "false"}"
+              title="${isActive ? "Deactivate rule" : "Activate rule"}"
+            >
+              ${isActive ? "Active" : "Inactive"}
+            </button>
           </div>
           <p>Setup ${formatMoney(rule.setup_fee_cents)}</p>
           <p>Cost ${formatMoney(rule.print_cost_per_shirt_cents)} / shirt - Price ${formatMoney(rule.print_price_per_shirt_cents)} / shirt</p>
@@ -373,6 +395,14 @@ function renderRules() {
       event.preventDefault();
       event.stopPropagation();
       deleteRule(button.dataset.ruleId);
+    });
+  });
+
+  ruleList.querySelectorAll(".pricing-active-toggle[data-rule-id]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleRuleActive(button.dataset.ruleId);
     });
   });
 }
@@ -448,6 +478,31 @@ async function deleteBlank(blankId) {
   }
 }
 
+async function toggleBlankActive(blankId) {
+  const blank = blanks.find((entry) => Number(entry.id) === Number(blankId));
+
+  if (!blank) return;
+
+  clearError(blankError);
+
+  const nextActive = Number(blank.active) === 1 ? 0 : 1;
+
+  try {
+    const response = await fetch(`/api/pricing/shirt-blanks/${blankId}/active`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ active: nextActive }),
+    });
+
+    await parseApiResponse(response, "Failed to update shirt blank active state");
+    blank.active = nextActive;
+    renderBlanks();
+  } catch (error) {
+    showError(blankError, error.message);
+    window.alert(error.message);
+  }
+}
+
 async function saveRule() {
   clearError(ruleError);
   isSavingRule = true;
@@ -501,6 +556,31 @@ async function deleteRule(ruleId) {
     renderRules();
     resetRuleForm();
     await loadRules();
+  } catch (error) {
+    showError(ruleError, error.message);
+    window.alert(error.message);
+  }
+}
+
+async function toggleRuleActive(ruleId) {
+  const rule = printRules.find((entry) => Number(entry.id) === Number(ruleId));
+
+  if (!rule) return;
+
+  clearError(ruleError);
+
+  const nextActive = Number(rule.active) === 1 ? 0 : 1;
+
+  try {
+    const response = await fetch(`/api/pricing/print-rules/${ruleId}/active`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ active: nextActive }),
+    });
+
+    await parseApiResponse(response, "Failed to update print rule active state");
+    rule.active = nextActive;
+    renderRules();
   } catch (error) {
     showError(ruleError, error.message);
     window.alert(error.message);

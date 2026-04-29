@@ -107,6 +107,17 @@
   white-space: nowrap;
 }
 
+.pricing-active-toggle {
+  cursor: pointer;
+  font: inherit;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.pricing-active-toggle:hover {
+  transform: translateY(-1px);
+  border-color: var(--brand-blue);
+}
+
 .pricing-pill.inactive {
   background: var(--surface-soft);
   color: var(--text-muted);
