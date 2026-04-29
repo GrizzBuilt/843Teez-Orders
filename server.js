@@ -445,6 +445,7 @@ db.serialize(() => {
   );
 
   [
+    ["Port & Company", "PC43", "Essential Tee", "Base quote pricing tee", 300],
     ["Gildan", "5000", "Heavy Cotton Tee", "Budget-friendly everyday tee", 325],
     ["Gildan", "64000", "Softstyle Tee", "Softer retail-feel tee", 425],
     ["Bella+Canvas", "3001", "Unisex Jersey Tee", "Premium retail tee", 625],
