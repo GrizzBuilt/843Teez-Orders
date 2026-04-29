@@ -36,8 +36,14 @@ Sell-price behavior:
 - `total_price_cents` equals `price_per_shirt_cents * total_quantity`, plus
   any size upcharges from `shirt_blank_size_costs.extra_cost_cents`.
 - Blank cost and print cost stay internal-only cost tracking fields.
-- Multiple placements add internal print/setup cost, but do not multiply the
-  customer sell price. If selected placements have different sell prices, the
-  highest matching per-shirt sell price is used once for the order.
+- Multiple base placements add internal print/setup cost, but do not multiply
+  the customer sell price. If selected base placements have different sell
+  prices, the highest matching per-shirt sell price is used once for the order.
 - A 10-shirt quote at $15.00 each with two 2XL shirts and a $2.00 2XL upcharge
   should total $154.00: `(1500 * 10) + (200 * 2)`.
+- Sleeve is treated as an add-on. When sleeve is selected, it does not drive the
+  base sale-price tier. It adds `sleeve_add_on_price_cents * total_quantity` to
+  the customer total and `sleeve_add_on_cost_cents * total_quantity` to internal
+  print cost.
+- A 10-shirt quote with `full_front` at $15.00 and sleeve add-on price of $3.00
+  should total $180.00 before size upcharges: `(1500 * 10) + (300 * 10)`.

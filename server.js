@@ -277,6 +277,8 @@ db.serialize(() => {
       setup_fee_cents INTEGER NOT NULL DEFAULT 0,
       print_cost_per_shirt_cents INTEGER NOT NULL DEFAULT 0,
       print_price_per_shirt_cents INTEGER NOT NULL DEFAULT 0,
+      sleeve_add_on_price_cents INTEGER NOT NULL DEFAULT 0,
+      sleeve_add_on_cost_cents INTEGER NOT NULL DEFAULT 0,
       active INTEGER NOT NULL DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -499,8 +501,36 @@ db.serialize(() => {
     const maxQuantityColumn = columns.find(
       (column) => column.name === "max_quantity"
     );
+    const hasSleeveAddOnPrice = columns.some(
+      (column) => column.name === "sleeve_add_on_price_cents"
+    );
+    const hasSleeveAddOnCost = columns.some(
+      (column) => column.name === "sleeve_add_on_cost_cents"
+    );
 
     if (!maxQuantityColumn || Number(maxQuantityColumn.notnull) !== 1) {
+      if (!hasSleeveAddOnPrice) {
+        db.run(
+          `ALTER TABLE print_pricing_rules ADD COLUMN sleeve_add_on_price_cents INTEGER NOT NULL DEFAULT 0`,
+          (alterErr) => {
+            if (alterErr) {
+              console.error("Error adding sleeve add-on price column:", alterErr.message);
+            }
+          }
+        );
+      }
+
+      if (!hasSleeveAddOnCost) {
+        db.run(
+          `ALTER TABLE print_pricing_rules ADD COLUMN sleeve_add_on_cost_cents INTEGER NOT NULL DEFAULT 0`,
+          (alterErr) => {
+            if (alterErr) {
+              console.error("Error adding sleeve add-on cost column:", alterErr.message);
+            }
+          }
+        );
+      }
+
       ensureDtfVolumePricingRules();
       return;
     }
@@ -530,6 +560,8 @@ db.serialize(() => {
               setup_fee_cents INTEGER NOT NULL DEFAULT 0,
               print_cost_per_shirt_cents INTEGER NOT NULL DEFAULT 0,
               print_price_per_shirt_cents INTEGER NOT NULL DEFAULT 0,
+              sleeve_add_on_price_cents INTEGER NOT NULL DEFAULT 0,
+              sleeve_add_on_cost_cents INTEGER NOT NULL DEFAULT 0,
               active INTEGER NOT NULL DEFAULT 1,
               created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
               updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -554,6 +586,8 @@ db.serialize(() => {
                   setup_fee_cents,
                   print_cost_per_shirt_cents,
                   print_price_per_shirt_cents,
+                  sleeve_add_on_price_cents,
+                  sleeve_add_on_cost_cents,
                   active,
                   created_at,
                   updated_at
@@ -567,6 +601,16 @@ db.serialize(() => {
                   setup_fee_cents,
                   print_cost_per_shirt_cents,
                   print_price_per_shirt_cents,
+                  ${
+                    hasSleeveAddOnPrice
+                      ? "sleeve_add_on_price_cents"
+                      : "0 AS sleeve_add_on_price_cents"
+                  },
+                  ${
+                    hasSleeveAddOnCost
+                      ? "sleeve_add_on_cost_cents"
+                      : "0 AS sleeve_add_on_cost_cents"
+                  },
                   active,
                   created_at,
                   updated_at
@@ -615,6 +659,32 @@ db.serialize(() => {
         });
       });
     });
+
+    if (!hasSleeveAddOnPrice) {
+      db.run(
+        `ALTER TABLE print_pricing_rules ADD COLUMN sleeve_add_on_price_cents INTEGER NOT NULL DEFAULT 0`,
+        (alterErr) => {
+          if (alterErr) {
+            console.error("Error adding sleeve add-on price column:", alterErr.message);
+          } else {
+            console.log("Added sleeve add-on price column to print_pricing_rules.");
+          }
+        }
+      );
+    }
+
+    if (!hasSleeveAddOnCost) {
+      db.run(
+        `ALTER TABLE print_pricing_rules ADD COLUMN sleeve_add_on_cost_cents INTEGER NOT NULL DEFAULT 0`,
+        (alterErr) => {
+          if (alterErr) {
+            console.error("Error adding sleeve add-on cost column:", alterErr.message);
+          } else {
+            console.log("Added sleeve add-on cost column to print_pricing_rules.");
+          }
+        }
+      );
+    }
   });
 });
 
@@ -1253,8 +1323,16 @@ async function calculateQuote(input) {
   let printCostCents = 0;
   let setupFeeCents = 0;
   let pricePerShirtCents = 0;
+  let sleeveAddOnPriceCents = 0;
   let selectedPriceRuleId = null;
   const calculatedPlacements = [];
+  const basePlacements = placements.filter((placement) => placement !== "sleeve");
+
+  if (!basePlacements.length) {
+    const error = new Error("At least one non-sleeve print placement is required");
+    error.status = 400;
+    throw error;
+  }
 
   for (const placement of placements) {
     const rule = await dbGet(
@@ -1288,6 +1366,38 @@ async function calculateQuote(input) {
     );
 
     setupFeeCents += ruleSetupFeeCents;
+
+    if (placement === "sleeve") {
+      const ruleSleeveAddOnPriceCents = normalizeMoneyCents(
+        rule.sleeve_add_on_price_cents
+      );
+      const ruleSleeveAddOnCostCents = normalizeMoneyCents(
+        rule.sleeve_add_on_cost_cents
+      );
+      const sleeveAddOnCostCents = ruleSleeveAddOnCostCents * totalQuantity;
+      const sleeveAddOnPriceTotalCents =
+        ruleSleeveAddOnPriceCents * totalQuantity;
+
+      printCostCents += sleeveAddOnCostCents;
+      sleeveAddOnPriceCents += sleeveAddOnPriceTotalCents;
+
+      calculatedPlacements.push({
+        placement,
+        label: QUOTE_PLACEMENTS[placement],
+        rule_id: rule.id,
+        setup_fee_cents: ruleSetupFeeCents,
+        print_cost_per_shirt_cents: normalizeMoneyCents(rule.print_cost_per_shirt_cents),
+        print_price_per_shirt_cents: rulePricePerShirtCents,
+        sleeve_add_on_price_cents: ruleSleeveAddOnPriceCents,
+        sleeve_add_on_cost_cents: ruleSleeveAddOnCostCents,
+        print_cost_cents: sleeveAddOnCostCents,
+        print_price_cents: sleeveAddOnPriceTotalCents,
+        is_add_on: true,
+      });
+
+      continue;
+    }
+
     printCostCents += rulePrintCostCents;
 
     if (!selectedPriceRuleId || rulePricePerShirtCents > pricePerShirtCents) {
@@ -1302,8 +1412,11 @@ async function calculateQuote(input) {
       setup_fee_cents: ruleSetupFeeCents,
       print_cost_per_shirt_cents: normalizeMoneyCents(rule.print_cost_per_shirt_cents),
       print_price_per_shirt_cents: rulePricePerShirtCents,
+      sleeve_add_on_price_cents: normalizeMoneyCents(rule.sleeve_add_on_price_cents),
+      sleeve_add_on_cost_cents: normalizeMoneyCents(rule.sleeve_add_on_cost_cents),
       print_cost_cents: rulePrintCostCents,
       print_price_cents: rulePricePerShirtCents * totalQuantity,
+      is_add_on: false,
     });
   }
 
@@ -1311,7 +1424,8 @@ async function calculateQuote(input) {
     placement.selected_price_rule = placement.rule_id === selectedPriceRuleId;
   });
 
-  const totalPriceCents = pricePerShirtCents * totalQuantity + sizeUpchargeCents;
+  const totalPriceCents =
+    pricePerShirtCents * totalQuantity + sizeUpchargeCents + sleeveAddOnPriceCents;
   const profitCents =
     totalPriceCents - blankCostCents - printCostCents - setupFeeCents;
 
@@ -1685,9 +1799,11 @@ app.post("/api/pricing/print-rules", async (req, res) => {
           setup_fee_cents,
           print_cost_per_shirt_cents,
           print_price_per_shirt_cents,
+          sleeve_add_on_price_cents,
+          sleeve_add_on_cost_cents,
           active
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         printType,
@@ -1697,6 +1813,8 @@ app.post("/api/pricing/print-rules", async (req, res) => {
         normalizeMoneyCents(req.body?.setup_fee_cents),
         normalizeMoneyCents(req.body?.print_cost_per_shirt_cents),
         normalizeMoneyCents(req.body?.print_price_per_shirt_cents),
+        normalizeMoneyCents(req.body?.sleeve_add_on_price_cents),
+        normalizeMoneyCents(req.body?.sleeve_add_on_cost_cents),
         active,
       ]
     );
@@ -1747,6 +1865,8 @@ app.patch("/api/pricing/print-rules/:id", async (req, res) => {
             setup_fee_cents = ?,
             print_cost_per_shirt_cents = ?,
             print_price_per_shirt_cents = ?,
+            sleeve_add_on_price_cents = ?,
+            sleeve_add_on_cost_cents = ?,
             active = ?,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
@@ -1759,6 +1879,8 @@ app.patch("/api/pricing/print-rules/:id", async (req, res) => {
         normalizeMoneyCents(req.body?.setup_fee_cents),
         normalizeMoneyCents(req.body?.print_cost_per_shirt_cents),
         normalizeMoneyCents(req.body?.print_price_per_shirt_cents),
+        normalizeMoneyCents(req.body?.sleeve_add_on_price_cents),
+        normalizeMoneyCents(req.body?.sleeve_add_on_cost_cents),
         active,
         ruleId,
       ]

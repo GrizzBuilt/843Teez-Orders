@@ -138,6 +138,8 @@ function resetRuleForm() {
   document.getElementById("rule_id").value = "";
   document.getElementById("rule_min_quantity").value = "1";
   document.getElementById("rule_max_quantity").value = "";
+  document.getElementById("rule_sleeve_add_on_price").value = "0.00";
+  document.getElementById("rule_sleeve_add_on_cost").value = "0.00";
   document.getElementById("rule_active").checked = true;
   clearError(ruleError);
 }
@@ -175,6 +177,8 @@ function getRulePayload() {
     setup_fee_cents: inputToCents(formData.get("setup_fee")),
     print_cost_per_shirt_cents: inputToCents(formData.get("print_cost")),
     print_price_per_shirt_cents: inputToCents(formData.get("print_price")),
+    sleeve_add_on_price_cents: inputToCents(formData.get("sleeve_add_on_price")),
+    sleeve_add_on_cost_cents: inputToCents(formData.get("sleeve_add_on_cost")),
     active: document.getElementById("rule_active").checked,
   };
 }
@@ -233,6 +237,12 @@ function editRule(ruleId) {
   document.getElementById("rule_setup_fee").value = centsToInput(rule.setup_fee_cents);
   document.getElementById("rule_print_cost").value = centsToInput(rule.print_cost_per_shirt_cents);
   document.getElementById("rule_print_price").value = centsToInput(rule.print_price_per_shirt_cents);
+  document.getElementById("rule_sleeve_add_on_price").value = centsToInput(
+    rule.sleeve_add_on_price_cents
+  );
+  document.getElementById("rule_sleeve_add_on_cost").value = centsToInput(
+    rule.sleeve_add_on_cost_cents
+  );
   document.getElementById("rule_active").checked = Number(rule.active) === 1;
 
   clearError(ruleError);
@@ -316,6 +326,7 @@ function renderRules() {
           </div>
           <p>Setup ${formatMoney(rule.setup_fee_cents)}</p>
           <p>Cost ${formatMoney(rule.print_cost_per_shirt_cents)} / shirt - Price ${formatMoney(rule.print_price_per_shirt_cents)} / shirt</p>
+          <p>Sleeve add-on ${formatMoney(rule.sleeve_add_on_price_cents)} price - ${formatMoney(rule.sleeve_add_on_cost_cents)} cost / shirt</p>
           <div class="pricing-card-actions">
             <button
               type="button"
