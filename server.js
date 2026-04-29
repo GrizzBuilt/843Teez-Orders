@@ -20,6 +20,10 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const DB_DIR = path.join(__dirname, "db");
 const DB_PATH = path.join(DB_DIR, "orders.db");
+const BASE_PRICING_BLANK_STYLE_NUMBER =
+  process.env.BASE_PRICING_BLANK_STYLE_NUMBER || "PC43";
+const ALLOW_BLANK_PRICE_REDUCTION =
+  process.env.ALLOW_BLANK_PRICE_REDUCTION === "1";
 
 // =====================
 // Database Setup
@@ -1344,6 +1348,36 @@ async function calculateQuote(input) {
     throw error;
   }
 
+  const basePricingBlank = await dbGet(
+    `
+      SELECT *
+      FROM shirt_blanks
+      WHERE active = 1
+        AND UPPER(style_number) = UPPER(?)
+      ORDER BY id ASC
+      LIMIT 1
+    `,
+    [BASE_PRICING_BLANK_STYLE_NUMBER]
+  );
+
+  if (!basePricingBlank) {
+    const error = new Error(
+      `Base pricing blank ${BASE_PRICING_BLANK_STYLE_NUMBER} not found. Add it in Pricing Admin before calculating quotes.`
+    );
+    error.status = 400;
+    throw error;
+  }
+
+  const selectedBlankBaseCostCents = normalizeMoneyCents(blank.base_cost_cents);
+  const basePricingBlankCostCents = normalizeMoneyCents(
+    basePricingBlank.base_cost_cents
+  );
+  const rawBlankUpgradePerShirtCents =
+    selectedBlankBaseCostCents - basePricingBlankCostCents;
+  const blankUpgradePerShirtCents = ALLOW_BLANK_PRICE_REDUCTION
+    ? rawBlankUpgradePerShirtCents
+    : Math.max(0, rawBlankUpgradePerShirtCents);
+
   const sizeCosts = await dbAll(
     `
       SELECT size_label, extra_cost_cents
@@ -1364,8 +1398,7 @@ async function calculateQuote(input) {
     const blankExtraCostCents = sizeCostMap.get(size.size_label) || 0;
     const lineSizeUpchargeCents = blankExtraCostCents * size.quantity;
     const lineCostCents =
-      (normalizeMoneyCents(blank.base_cost_cents) + blankExtraCostCents) *
-      size.quantity;
+      (selectedBlankBaseCostCents + blankExtraCostCents) * size.quantity;
 
     blankCostCents += lineCostCents;
     sizeUpchargeCents += lineSizeUpchargeCents;
@@ -1486,7 +1519,9 @@ async function calculateQuote(input) {
   }
 
   const pricePerShirtCents =
-    basePricePerShirtCents + sleeveAddOnPricePerShirtCents;
+    basePricePerShirtCents +
+    blankUpgradePerShirtCents +
+    sleeveAddOnPricePerShirtCents;
   const totalPriceCents =
     pricePerShirtCents * totalQuantity + sizeUpchargeCents;
   const profitCents =
@@ -1494,6 +1529,12 @@ async function calculateQuote(input) {
   const pricingDebug = {
     totalQuantity,
     basePricePerShirtCents,
+    baseTierPricePerShirtCents: basePricePerShirtCents,
+    basePricingBlankStyleNumber: BASE_PRICING_BLANK_STYLE_NUMBER,
+    basePricingBlankCostCents,
+    selectedBlankBaseCostCents,
+    rawBlankUpgradePerShirtCents,
+    blankUpgradePerShirtCents,
     sleeveAddOnPricePerShirtCents,
     pricePerShirtCents,
     totalPriceCents,
@@ -1504,7 +1545,7 @@ async function calculateQuote(input) {
     item: {
       shirt_blank_id: shirtBlankId,
       blank_label: getBlankLabel(blank),
-      blank_base_cost_cents: normalizeMoneyCents(blank.base_cost_cents),
+      blank_base_cost_cents: selectedBlankBaseCostCents,
       color: String(itemInput.color || "").trim(),
       print_type: printType,
       placements,
