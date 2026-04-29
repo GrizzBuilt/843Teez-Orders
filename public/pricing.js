@@ -286,6 +286,13 @@ function renderBlanks() {
             >
               Edit
             </button>
+            <button
+              type="button"
+              class="secondary-btn pricing-delete-btn blank-delete-btn"
+              data-blank-id="${escapeHtml(blank.id)}"
+            >
+              Delete
+            </button>
           </div>
         </article>
       `;
@@ -294,6 +301,10 @@ function renderBlanks() {
 
   blankList.querySelectorAll(".blank-edit-btn").forEach((button) => {
     button.addEventListener("click", () => editBlank(button.dataset.blankId));
+  });
+
+  blankList.querySelectorAll(".blank-delete-btn").forEach((button) => {
+    button.addEventListener("click", () => deleteBlank(button.dataset.blankId));
   });
 }
 
@@ -335,6 +346,13 @@ function renderRules() {
             >
               Edit
             </button>
+            <button
+              type="button"
+              class="secondary-btn pricing-delete-btn rule-delete-btn"
+              data-rule-id="${escapeHtml(rule.id)}"
+            >
+              Delete
+            </button>
           </div>
         </article>
       `;
@@ -344,6 +362,10 @@ function renderRules() {
 
   ruleList.querySelectorAll(".rule-edit-btn").forEach((button) => {
     button.addEventListener("click", () => editRule(button.dataset.ruleId));
+  });
+
+  ruleList.querySelectorAll(".rule-delete-btn").forEach((button) => {
+    button.addEventListener("click", () => deleteRule(button.dataset.ruleId));
   });
 }
 
@@ -390,6 +412,31 @@ async function saveBlank() {
   }
 }
 
+async function deleteBlank(blankId) {
+  const blank = blanks.find((entry) => Number(entry.id) === Number(blankId));
+
+  if (!blank) return;
+
+  clearError(blankError);
+
+  const label = `${blank.brand} ${blank.style_number}`;
+  if (!confirm(`Delete ${label}? This cannot be undone.`)) {
+    return;
+  }
+
+  try {
+    const response = await fetch(`/api/pricing/shirt-blanks/${blankId}`, {
+      method: "DELETE",
+    });
+
+    await parseApiResponse(response, "Failed to delete shirt blank");
+    resetBlankForm();
+    await loadBlanks();
+  } catch (error) {
+    showError(blankError, error.message);
+  }
+}
+
 async function saveRule() {
   clearError(ruleError);
   isSavingRule = true;
@@ -418,6 +465,31 @@ async function saveRule() {
   } finally {
     isSavingRule = false;
     setRuleBusyState();
+  }
+}
+
+async function deleteRule(ruleId) {
+  const rule = printRules.find((entry) => Number(entry.id) === Number(ruleId));
+
+  if (!rule) return;
+
+  clearError(ruleError);
+
+  const label = `${rule.print_type} ${PLACEMENT_LABELS[rule.placement] || rule.placement}`;
+  if (!confirm(`Delete ${label} pricing rule? This cannot be undone.`)) {
+    return;
+  }
+
+  try {
+    const response = await fetch(`/api/pricing/print-rules/${ruleId}`, {
+      method: "DELETE",
+    });
+
+    await parseApiResponse(response, "Failed to delete print rule");
+    resetRuleForm();
+    await loadRules();
+  } catch (error) {
+    showError(ruleError, error.message);
   }
 }
 

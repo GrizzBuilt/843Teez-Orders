@@ -1880,6 +1880,82 @@ app.patch("/api/pricing/shirt-blanks/:id", async (req, res) => {
   }
 });
 
+app.delete("/api/pricing/shirt-blanks/:id", async (req, res) => {
+  const blankId = Number(req.params.id);
+
+  if (!Number.isInteger(blankId) || blankId < 1) {
+    return res.status(400).json({ error: "Valid shirt blank id is required" });
+  }
+
+  try {
+    const blank = await dbGet(
+      `
+        SELECT *
+        FROM shirt_blanks
+        WHERE id = ?
+      `,
+      [blankId]
+    );
+
+    if (!blank) {
+      return res.status(404).json({ error: "Shirt blank not found" });
+    }
+
+    if (
+      String(blank.style_number || "").toUpperCase() ===
+      BASE_PRICING_BLANK_STYLE_NUMBER.toUpperCase()
+    ) {
+      return res.status(400).json({
+        error: `${BASE_PRICING_BLANK_STYLE_NUMBER} is the base pricing blank and cannot be deleted`,
+      });
+    }
+
+    const quoteUsage = await dbGet(
+      `
+        SELECT COUNT(*) AS count
+        FROM quote_items
+        WHERE shirt_blank_id = ?
+      `,
+      [blankId]
+    );
+
+    if (Number(quoteUsage?.count) > 0) {
+      return res.status(409).json({
+        error: "This shirt blank is used by saved quotes. Deactivate it instead.",
+      });
+    }
+
+    await dbRun("BEGIN IMMEDIATE TRANSACTION");
+
+    try {
+      await dbRun(
+        `
+          DELETE FROM shirt_blank_size_costs
+          WHERE shirt_blank_id = ?
+        `,
+        [blankId]
+      );
+
+      await dbRun(
+        `
+          DELETE FROM shirt_blanks
+          WHERE id = ?
+        `,
+        [blankId]
+      );
+
+      await dbRun("COMMIT");
+      res.json({ ok: true, id: blankId });
+    } catch (err) {
+      await dbRun("ROLLBACK");
+      throw err;
+    }
+  } catch (err) {
+    console.error("Error deleting pricing blank:", err.message);
+    res.status(500).json({ error: "Failed to delete shirt blank" });
+  }
+});
+
 // =====================
 // Routes - Pricing Admin: Print Rules
 // Purpose:
@@ -2031,6 +2107,33 @@ app.patch("/api/pricing/print-rules/:id", async (req, res) => {
         ? "A print pricing rule already exists for that type, placement, and quantity range"
         : "Failed to update print pricing rule",
     });
+  }
+});
+
+app.delete("/api/pricing/print-rules/:id", async (req, res) => {
+  const ruleId = Number(req.params.id);
+
+  if (!Number.isInteger(ruleId) || ruleId < 1) {
+    return res.status(400).json({ error: "Valid print rule id is required" });
+  }
+
+  try {
+    const result = await dbRun(
+      `
+        DELETE FROM print_pricing_rules
+        WHERE id = ?
+      `,
+      [ruleId]
+    );
+
+    if (result.changes === 0) {
+      return res.status(404).json({ error: "Print pricing rule not found" });
+    }
+
+    res.json({ ok: true, id: ruleId });
+  } catch (err) {
+    console.error("Error deleting pricing print rule:", err.message);
+    res.status(500).json({ error: "Failed to delete print pricing rule" });
   }
 });
 

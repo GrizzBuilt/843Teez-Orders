@@ -83,6 +83,15 @@
   padding: 0.45rem 0.7rem;
 }
 
+.pricing-delete-btn {
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+.pricing-delete-btn:hover:not(:disabled) {
+  background: #fff1f2;
+}
+
 .pricing-pill {
   display: inline-flex;
   align-items: center;
@@ -115,6 +124,15 @@ body.dark-mode .pricing-pill {
   background: #182638;
   border-color: #29405a;
   color: #b8cad8;
+}
+
+body.dark-mode .pricing-delete-btn {
+  border-color: #7f1d1d;
+  color: #fecaca;
+}
+
+body.dark-mode .pricing-delete-btn:hover:not(:disabled) {
+  background: #2a1114;
 }
 
 @media (max-width: 1040px) {
