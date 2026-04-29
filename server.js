@@ -1910,21 +1910,6 @@ app.delete("/api/pricing/shirt-blanks/:id", async (req, res) => {
       });
     }
 
-    const quoteUsage = await dbGet(
-      `
-        SELECT COUNT(*) AS count
-        FROM quote_items
-        WHERE shirt_blank_id = ?
-      `,
-      [blankId]
-    );
-
-    if (Number(quoteUsage?.count) > 0) {
-      return res.status(409).json({
-        error: "This shirt blank is used by saved quotes. Deactivate it instead.",
-      });
-    }
-
     await dbRun("BEGIN IMMEDIATE TRANSACTION");
 
     try {

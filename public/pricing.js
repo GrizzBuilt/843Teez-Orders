@@ -304,7 +304,11 @@ function renderBlanks() {
   });
 
   blankList.querySelectorAll(".blank-delete-btn").forEach((button) => {
-    button.addEventListener("click", () => deleteBlank(button.dataset.blankId));
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      deleteBlank(button.dataset.blankId);
+    });
   });
 }
 
@@ -365,7 +369,11 @@ function renderRules() {
   });
 
   ruleList.querySelectorAll(".rule-delete-btn").forEach((button) => {
-    button.addEventListener("click", () => deleteRule(button.dataset.ruleId));
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      deleteRule(button.dataset.ruleId);
+    });
   });
 }
 
@@ -420,7 +428,7 @@ async function deleteBlank(blankId) {
   clearError(blankError);
 
   const label = `${blank.brand} ${blank.style_number}`;
-  if (!confirm(`Delete ${label}? This cannot be undone.`)) {
+  if (!window.confirm(`Delete ${label}? This cannot be undone.`)) {
     return;
   }
 
@@ -430,10 +438,13 @@ async function deleteBlank(blankId) {
     });
 
     await parseApiResponse(response, "Failed to delete shirt blank");
+    blanks = blanks.filter((entry) => Number(entry.id) !== Number(blankId));
+    renderBlanks();
     resetBlankForm();
     await loadBlanks();
   } catch (error) {
     showError(blankError, error.message);
+    window.alert(error.message);
   }
 }
 
@@ -476,7 +487,7 @@ async function deleteRule(ruleId) {
   clearError(ruleError);
 
   const label = `${rule.print_type} ${PLACEMENT_LABELS[rule.placement] || rule.placement}`;
-  if (!confirm(`Delete ${label} pricing rule? This cannot be undone.`)) {
+  if (!window.confirm(`Delete ${label} pricing rule? This cannot be undone.`)) {
     return;
   }
 
@@ -486,10 +497,13 @@ async function deleteRule(ruleId) {
     });
 
     await parseApiResponse(response, "Failed to delete print rule");
+    printRules = printRules.filter((entry) => Number(entry.id) !== Number(ruleId));
+    renderRules();
     resetRuleForm();
     await loadRules();
   } catch (error) {
     showError(ruleError, error.message);
+    window.alert(error.message);
   }
 }
 
