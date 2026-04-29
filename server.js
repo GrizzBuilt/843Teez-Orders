@@ -126,16 +126,10 @@ function seedDtfVolumePricingRules() {
     [100, null, 1000],
   ];
 
-  function getSleeveAddOnPriceCents(minQuantity) {
-    if (minQuantity >= 10) return 300;
-    if (minQuantity >= 5) return 400;
-    return 500;
-  }
-
   Object.entries(dtfPlacementCosts).forEach(([placement, printCostCents]) => {
     dtfSaleTiers.forEach(([minQuantity, maxQuantity, salePriceCents]) => {
       const sleeveAddOnPriceCents =
-        placement === "sleeve" ? getSleeveAddOnPriceCents(minQuantity) : 0;
+        placement === "sleeve" ? 300 : 0;
       const sleeveAddOnCostCents = placement === "sleeve" ? printCostCents : 0;
       const rule = [
         "DTF",
@@ -279,11 +273,7 @@ function ensureDtfVolumePricingRules() {
         )
         AND (
           placement != 'sleeve'
-          OR (
-            (min_quantity = 1 AND max_quantity = 4 AND sleeve_add_on_price_cents = 500)
-            OR (min_quantity = 5 AND max_quantity = 9 AND sleeve_add_on_price_cents = 400)
-            OR (min_quantity >= 10 AND sleeve_add_on_price_cents = 300)
-          )
+          OR sleeve_add_on_price_cents = 300
         )
     `,
     (err, row) => {
