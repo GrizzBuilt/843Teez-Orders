@@ -445,7 +445,7 @@ db.serialize(() => {
   );
 
   [
-    ["Port & Company", "PC43", "Essential Tee", "Base quote pricing tee", 300],
+    ["Port & Company", "PC43", "Basic Tee", "Go-to tee for quote pricing", 300],
     ["Gildan", "5000", "Heavy Cotton Tee", "Budget-friendly everyday tee", 325],
     ["Gildan", "64000", "Softstyle Tee", "Softer retail-feel tee", 425],
     ["Bella+Canvas", "3001", "Unisex Jersey Tee", "Premium retail tee", 625],
@@ -469,6 +469,24 @@ db.serialize(() => {
       }
     );
   });
+
+  db.run(
+    `
+      UPDATE shirt_blanks
+      SET name = ?,
+          description = ?,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE brand = ?
+        AND style_number = ?
+        AND name = ?
+    `,
+    ["Basic Tee", "Go-to tee for quote pricing", "Port & Company", "PC43", "Essential Tee"],
+    (err) => {
+      if (err) {
+        console.error("Error updating PC43 seed label:", err.message);
+      }
+    }
+  );
 
   [
     ["2XL", 200],
