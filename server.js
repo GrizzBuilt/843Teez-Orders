@@ -37,6 +37,16 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
 });
 
 function seedPrintPricingRule(rule) {
+  const [
+    printType,
+    placement,
+    minQuantity,
+    maxQuantity,
+    setupFeeCents,
+    printCostPerShirtCents,
+    printPricePerShirtCents,
+  ] = rule;
+
   db.run(
     `
       INSERT INTO print_pricing_rules (
@@ -61,7 +71,20 @@ function seedPrintPricingRule(rule) {
           )
       )
     `,
-    [...rule, rule[0], rule[1], rule[2], rule[3], rule[3]],
+    [
+      printType,
+      placement,
+      minQuantity,
+      maxQuantity,
+      setupFeeCents,
+      printCostPerShirtCents,
+      printPricePerShirtCents,
+      printType,
+      placement,
+      minQuantity,
+      maxQuantity,
+      maxQuantity,
+    ],
     (err) => {
       if (err) {
         console.error("Error seeding print pricing rule:", err.message);
@@ -103,8 +126,17 @@ function seedDtfVolumePricingRules() {
     [100, null, 1000],
   ];
 
+  function getSleeveAddOnPriceCents(minQuantity) {
+    if (minQuantity >= 10) return 300;
+    if (minQuantity >= 5) return 400;
+    return 500;
+  }
+
   Object.entries(dtfPlacementCosts).forEach(([placement, printCostCents]) => {
     dtfSaleTiers.forEach(([minQuantity, maxQuantity, salePriceCents]) => {
+      const sleeveAddOnPriceCents =
+        placement === "sleeve" ? getSleeveAddOnPriceCents(minQuantity) : 0;
+      const sleeveAddOnCostCents = placement === "sleeve" ? printCostCents : 0;
       const rule = [
         "DTF",
         placement,
@@ -113,6 +145,8 @@ function seedDtfVolumePricingRules() {
         0,
         printCostCents,
         salePriceCents,
+        sleeveAddOnPriceCents,
+        sleeveAddOnCostCents,
       ];
 
       db.run(
@@ -121,6 +155,8 @@ function seedDtfVolumePricingRules() {
           SET setup_fee_cents = ?,
               print_cost_per_shirt_cents = ?,
               print_price_per_shirt_cents = ?,
+              sleeve_add_on_price_cents = ?,
+              sleeve_add_on_cost_cents = ?,
               active = 1,
               updated_at = CURRENT_TIMESTAMP
           WHERE print_type = ?
@@ -135,6 +171,8 @@ function seedDtfVolumePricingRules() {
           rule[4],
           rule[5],
           rule[6],
+          rule[7],
+          rule[8],
           rule[0],
           rule[1],
           rule[2],
@@ -148,7 +186,54 @@ function seedDtfVolumePricingRules() {
           }
 
           if (this.changes === 0) {
-            seedPrintPricingRule(rule);
+            db.run(
+              `
+                INSERT INTO print_pricing_rules (
+                  print_type,
+                  placement,
+                  min_quantity,
+                  max_quantity,
+                  setup_fee_cents,
+                  print_cost_per_shirt_cents,
+                  print_price_per_shirt_cents,
+                  sleeve_add_on_price_cents,
+                  sleeve_add_on_cost_cents
+                )
+                SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+                WHERE NOT EXISTS (
+                  SELECT 1
+                  FROM print_pricing_rules
+                  WHERE print_type = ?
+                    AND placement = ?
+                    AND min_quantity = ?
+                    AND (
+                      (max_quantity IS NULL AND ? IS NULL)
+                      OR max_quantity = ?
+                    )
+                )
+              `,
+              [
+                rule[0],
+                rule[1],
+                rule[2],
+                rule[3],
+                rule[4],
+                rule[5],
+                rule[6],
+                rule[7],
+                rule[8],
+                rule[0],
+                rule[1],
+                rule[2],
+                rule[3],
+                rule[3],
+              ],
+              (insertErr) => {
+                if (insertErr) {
+                  console.error("Error inserting DTF pricing rule:", insertErr.message);
+                }
+              }
+            );
           }
         }
       );
@@ -191,6 +276,14 @@ function ensureDtfVolumePricingRules() {
           OR (min_quantity = 25 AND max_quantity = 49 AND print_price_per_shirt_cents = 1200)
           OR (min_quantity = 50 AND max_quantity = 99 AND print_price_per_shirt_cents = 1100)
           OR (min_quantity = 100 AND max_quantity IS NULL AND print_price_per_shirt_cents = 1000)
+        )
+        AND (
+          placement != 'sleeve'
+          OR (
+            (min_quantity = 1 AND max_quantity = 4 AND sleeve_add_on_price_cents = 500)
+            OR (min_quantity = 5 AND max_quantity = 9 AND sleeve_add_on_price_cents = 400)
+            OR (min_quantity >= 10 AND sleeve_add_on_price_cents = 300)
+          )
         )
     `,
     (err, row) => {
@@ -660,31 +753,6 @@ db.serialize(() => {
       });
     });
 
-    if (!hasSleeveAddOnPrice) {
-      db.run(
-        `ALTER TABLE print_pricing_rules ADD COLUMN sleeve_add_on_price_cents INTEGER NOT NULL DEFAULT 0`,
-        (alterErr) => {
-          if (alterErr) {
-            console.error("Error adding sleeve add-on price column:", alterErr.message);
-          } else {
-            console.log("Added sleeve add-on price column to print_pricing_rules.");
-          }
-        }
-      );
-    }
-
-    if (!hasSleeveAddOnCost) {
-      db.run(
-        `ALTER TABLE print_pricing_rules ADD COLUMN sleeve_add_on_cost_cents INTEGER NOT NULL DEFAULT 0`,
-        (alterErr) => {
-          if (alterErr) {
-            console.error("Error adding sleeve add-on cost column:", alterErr.message);
-          } else {
-            console.log("Added sleeve add-on cost column to print_pricing_rules.");
-          }
-        }
-      );
-    }
   });
 });
 
