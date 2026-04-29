@@ -1390,10 +1390,11 @@ async function calculateQuote(input) {
 
   let printCostCents = 0;
   let setupFeeCents = 0;
-  let pricePerShirtCents = 0;
-  let sleeveAddOnPriceCents = 0;
+  let basePricePerShirtCents = 0;
+  let sleeveAddOnPricePerShirtCents = 0;
   let selectedPriceRuleId = null;
   const calculatedPlacements = [];
+  const hasSleeve = placements.includes("sleeve");
   const basePlacements = placements.filter((placement) => placement !== "sleeve");
 
   if (!basePlacements.length) {
@@ -1443,11 +1444,9 @@ async function calculateQuote(input) {
         rule.sleeve_add_on_cost_cents
       );
       const sleeveAddOnCostCents = ruleSleeveAddOnCostCents * totalQuantity;
-      const sleeveAddOnPriceTotalCents =
-        ruleSleeveAddOnPriceCents * totalQuantity;
 
       printCostCents += sleeveAddOnCostCents;
-      sleeveAddOnPriceCents += sleeveAddOnPriceTotalCents;
+      sleeveAddOnPricePerShirtCents = ruleSleeveAddOnPriceCents;
 
       calculatedPlacements.push({
         placement,
@@ -1459,7 +1458,7 @@ async function calculateQuote(input) {
         sleeve_add_on_price_cents: ruleSleeveAddOnPriceCents,
         sleeve_add_on_cost_cents: ruleSleeveAddOnCostCents,
         print_cost_cents: sleeveAddOnCostCents,
-        print_price_cents: sleeveAddOnPriceTotalCents,
+        print_price_cents: ruleSleeveAddOnPriceCents * totalQuantity,
         is_add_on: true,
       });
 
@@ -1468,9 +1467,9 @@ async function calculateQuote(input) {
 
     printCostCents += rulePrintCostCents;
 
-    if (!selectedPriceRuleId || rulePricePerShirtCents > pricePerShirtCents) {
+    if (!selectedPriceRuleId || rulePricePerShirtCents > basePricePerShirtCents) {
       selectedPriceRuleId = rule.id;
-      pricePerShirtCents = rulePricePerShirtCents;
+      basePricePerShirtCents = rulePricePerShirtCents;
     }
 
     calculatedPlacements.push({
@@ -1492,12 +1491,26 @@ async function calculateQuote(input) {
     placement.selected_price_rule = placement.rule_id === selectedPriceRuleId;
   });
 
+  if (!hasSleeve) {
+    sleeveAddOnPricePerShirtCents = 0;
+  }
+
+  const pricePerShirtCents =
+    basePricePerShirtCents + sleeveAddOnPricePerShirtCents;
   const totalPriceCents =
-    pricePerShirtCents * totalQuantity + sizeUpchargeCents + sleeveAddOnPriceCents;
+    pricePerShirtCents * totalQuantity + sizeUpchargeCents;
   const profitCents =
     totalPriceCents - blankCostCents - printCostCents - setupFeeCents;
+  const pricingDebug = {
+    totalQuantity,
+    basePricePerShirtCents,
+    sleeveAddOnPricePerShirtCents,
+    pricePerShirtCents,
+    totalPriceCents,
+  };
 
   return {
+    pricing_debug: pricingDebug,
     item: {
       shirt_blank_id: shirtBlankId,
       blank_label: getBlankLabel(blank),
@@ -1515,6 +1528,7 @@ async function calculateQuote(input) {
       total_price_cents: totalPriceCents,
       price_per_shirt_cents: pricePerShirtCents,
       profit_cents: profitCents,
+      pricing_debug: pricingDebug,
     },
     totals: {
       total_quantity: totalQuantity,
@@ -1524,6 +1538,7 @@ async function calculateQuote(input) {
       total_price_cents: totalPriceCents,
       price_per_shirt_cents: pricePerShirtCents,
       profit_cents: profitCents,
+      pricing_debug: pricingDebug,
     },
   };
 }

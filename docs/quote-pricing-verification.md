@@ -43,11 +43,14 @@ Sell-price behavior:
   should total $154.00: `(1500 * 10) + (200 * 2)`.
 - Sleeve is treated as an add-on. When sleeve is selected, it does not drive the
   base sale-price tier. It adds `sleeve_add_on_price_cents * total_quantity` to
-  the customer total and `sleeve_add_on_cost_cents * total_quantity` to internal
-  print cost.
+  the customer total through `price_per_shirt_cents` and
+  `sleeve_add_on_cost_cents * total_quantity` to internal print cost.
 - DTF sleeve add-on price tiers are $5.00 for 1-4 shirts, $4.00 for 5-9 shirts,
   and $3.00 for 10+ shirts. A 10-shirt quote with `full_front` at $15.00 and
   sleeve selected should total $180.00 before size upcharges:
   `(1500 * 10) + (300 * 10)`.
+- The same 10-shirt sleeve quote should return `price_per_shirt_cents = 1800`
+  and `pricing_debug.basePricePerShirtCents = 1500`,
+  `pricing_debug.sleeveAddOnPricePerShirtCents = 300`.
 - Crossing the sleeve add-on tiers should use total quantity: 4 shirts add
   `$20.00`, 5 shirts add `$20.00`, and 10 shirts add `$30.00`.
