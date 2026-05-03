@@ -116,6 +116,32 @@ function seedDtfVolumePricingRules() {
     }
   );
 
+  db.run(
+    `
+      UPDATE print_pricing_rules
+      SET active = 0,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE print_type = 'DTF'
+        AND placement IN ('left_chest', 'full_front', 'full_back', 'sleeve')
+        AND NOT (
+          (min_quantity = 1 AND max_quantity = 1)
+          OR (min_quantity = 2 AND max_quantity = 2)
+          OR (min_quantity = 3 AND max_quantity = 3)
+          OR (min_quantity = 4 AND max_quantity = 4)
+          OR (min_quantity = 5 AND max_quantity = 9)
+          OR (min_quantity = 10 AND max_quantity = 24)
+          OR (min_quantity = 25 AND max_quantity = 49)
+          OR (min_quantity = 50 AND max_quantity = 99)
+          OR (min_quantity = 100 AND max_quantity IS NULL)
+        )
+    `,
+    (err) => {
+      if (err) {
+        console.error("Error deactivating old DTF pricing tiers:", err.message);
+      }
+    }
+  );
+
   const dtfPlacementCosts = {
     left_chest: 150,
     full_front: 250,
@@ -124,12 +150,15 @@ function seedDtfVolumePricingRules() {
   };
 
   const dtfSaleTiers = [
-    [1, 4, 2000],
-    [5, 9, 1700],
-    [10, 24, 1500],
-    [25, 49, 1200],
-    [50, 99, 1100],
-    [100, null, 1000],
+    [1, 1, 2000],
+    [2, 2, 1750],
+    [3, 3, 1600],
+    [4, 4, 1500],
+    [5, 9, 1400],
+    [10, 24, 1200],
+    [25, 49, 1000],
+    [50, 99, 900],
+    [100, null, 800],
   ];
 
   Object.entries(dtfPlacementCosts).forEach(([placement, printCostCents]) => {
@@ -242,7 +271,7 @@ function seedDtfVolumePricingRules() {
 }
 
 function ensureDtfVolumePricingRules() {
-  const requiredTierCount = 4 * 6;
+  const requiredTierCount = 4 * 9;
 
   db.run(
     `
@@ -269,12 +298,15 @@ function ensureDtfVolumePricingRules() {
       WHERE print_type = 'DTF'
         AND placement IN ('left_chest', 'full_front', 'full_back', 'sleeve')
         AND (
-          (min_quantity = 1 AND max_quantity = 4 AND print_price_per_shirt_cents = 2000)
-          OR (min_quantity = 5 AND max_quantity = 9 AND print_price_per_shirt_cents = 1700)
-          OR (min_quantity = 10 AND max_quantity = 24 AND print_price_per_shirt_cents = 1500)
-          OR (min_quantity = 25 AND max_quantity = 49 AND print_price_per_shirt_cents = 1200)
-          OR (min_quantity = 50 AND max_quantity = 99 AND print_price_per_shirt_cents = 1100)
-          OR (min_quantity = 100 AND max_quantity IS NULL AND print_price_per_shirt_cents = 1000)
+          (min_quantity = 1 AND max_quantity = 1 AND print_price_per_shirt_cents = 2000)
+          OR (min_quantity = 2 AND max_quantity = 2 AND print_price_per_shirt_cents = 1750)
+          OR (min_quantity = 3 AND max_quantity = 3 AND print_price_per_shirt_cents = 1600)
+          OR (min_quantity = 4 AND max_quantity = 4 AND print_price_per_shirt_cents = 1500)
+          OR (min_quantity = 5 AND max_quantity = 9 AND print_price_per_shirt_cents = 1400)
+          OR (min_quantity = 10 AND max_quantity = 24 AND print_price_per_shirt_cents = 1200)
+          OR (min_quantity = 25 AND max_quantity = 49 AND print_price_per_shirt_cents = 1000)
+          OR (min_quantity = 50 AND max_quantity = 99 AND print_price_per_shirt_cents = 900)
+          OR (min_quantity = 100 AND max_quantity IS NULL AND print_price_per_shirt_cents = 800)
         )
         AND (
           placement != 'sleeve'
