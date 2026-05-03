@@ -1624,11 +1624,11 @@ async function calculateQuote(input) {
     const sizeActualCostCents = sizeCost?.actual_cost_cents > 0
       ? sizeCost.actual_cost_cents
       : selectedBlankBaseCostCents;
-    const blankExtraCostCents = Math.max(
+    const sizeAdjustmentPerShirtCents = Math.max(
       0,
       sizeActualCostCents - selectedBlankBaseCostCents
     );
-    const lineSizeUpchargeCents = blankExtraCostCents * size.quantity;
+    const lineSizeUpchargeCents = sizeAdjustmentPerShirtCents * size.quantity;
     const lineCostCents = sizeActualCostCents * size.quantity;
 
     sizeActualCosts[size.size_label] = sizeActualCostCents;
@@ -1637,14 +1637,16 @@ async function calculateQuote(input) {
 
     return {
       ...size,
-      blank_extra_cost_cents: blankExtraCostCents,
+      blank_extra_cost_cents: sizeAdjustmentPerShirtCents,
       actual_blank_cost_cents: sizeActualCostCents,
       line_cost_cents: lineCostCents,
-      size_upcharge_cents: lineSizeUpchargeCents,
+      size_adjustment_per_shirt_cents: sizeAdjustmentPerShirtCents,
+      size_upcharge_cents: sizeAdjustmentPerShirtCents,
+      size_upcharge_total_cents: lineSizeUpchargeCents,
     };
   });
   const sizeUpchargeTotalCents = calculatedSizes.reduce(
-    (sum, size) => sum + size.blank_extra_cost_cents * size.quantity,
+    (sum, size) => sum + size.size_upcharge_cents * size.quantity,
     0
   );
 
@@ -1791,7 +1793,10 @@ async function calculateQuote(input) {
     calculatedSizes,
     sizeActualCosts,
     sizeUpchargeTotalCents,
+    sleeveAddOnPerShirtCents,
+    sleeveAddOnTotalCents,
     totalQuantity,
+    baseSubtotalCents: baseDealSubtotalCents,
     pricePerShirtCents,
     totalPriceCents,
   });
@@ -1808,6 +1813,7 @@ async function calculateQuote(input) {
     sleeveAddOnPerShirtCents,
     sleeveAddOnPricePerShirtCents: sleeveAddOnPerShirtCents,
     pricingLabel,
+    baseSubtotalCents: baseDealSubtotalCents,
     baseDealSubtotalCents,
     blankUpgradeTotalCents,
     sleeveAddOnTotalCents,
