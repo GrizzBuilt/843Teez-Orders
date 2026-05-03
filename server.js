@@ -1504,7 +1504,7 @@ async function calculateQuote(input) {
   );
 
   let blankCostCents = 0;
-  let sizeUpchargeCents = 0;
+  let sizeUpchargeTotalCents = 0;
 
   const calculatedSizes = sizes.map((size) => {
     const blankExtraCostCents = sizeCostMap.get(size.size_label) || 0;
@@ -1513,7 +1513,7 @@ async function calculateQuote(input) {
       (selectedBlankBaseCostCents + blankExtraCostCents) * size.quantity;
 
     blankCostCents += lineCostCents;
-    sizeUpchargeCents += lineSizeUpchargeCents;
+    sizeUpchargeTotalCents += lineSizeUpchargeCents;
 
     return {
       ...size,
@@ -1641,7 +1641,7 @@ async function calculateQuote(input) {
   const blankUpgradeTotalCents = blankUpgradePerShirtCents * totalQuantity;
   const sleeveAddOnTotalCents = sleeveAddOnPricePerShirtCents * totalQuantity;
   const totalPriceCents =
-    pricePerShirtCents * totalQuantity + sizeUpchargeCents;
+    pricePerShirtCents * totalQuantity + sizeUpchargeTotalCents;
   const profitCents =
     totalPriceCents - blankCostCents - printCostCents - setupFeeCents;
   const pricingDebug = {
@@ -1654,12 +1654,14 @@ async function calculateQuote(input) {
     selectedBlankBaseCostCents,
     rawBlankUpgradePerShirtCents,
     blankUpgradePerShirtCents,
+    sleeveAddOnPerShirtCents: sleeveAddOnPricePerShirtCents,
     sleeveAddOnPricePerShirtCents,
     pricingLabel,
     baseDealSubtotalCents,
     blankUpgradeTotalCents,
     sleeveAddOnTotalCents,
-    sizeUpchargeCents,
+    sizeUpchargeTotalCents,
+    sizeUpchargeCents: sizeUpchargeTotalCents,
     pricePerShirtCents,
     totalPriceCents,
   };
@@ -1688,7 +1690,8 @@ async function calculateQuote(input) {
       base_deal_subtotal_cents: baseDealSubtotalCents,
       blank_upgrade_total_cents: blankUpgradeTotalCents,
       sleeve_add_on_total_cents: sleeveAddOnTotalCents,
-      size_upcharge_cents: sizeUpchargeCents,
+      size_upcharge_total_cents: sizeUpchargeTotalCents,
+      size_upcharge_cents: sizeUpchargeTotalCents,
       pricing_debug: pricingDebug,
     },
     totals: {
@@ -1703,7 +1706,8 @@ async function calculateQuote(input) {
       base_deal_subtotal_cents: baseDealSubtotalCents,
       blank_upgrade_total_cents: blankUpgradeTotalCents,
       sleeve_add_on_total_cents: sleeveAddOnTotalCents,
-      size_upcharge_cents: sizeUpchargeCents,
+      size_upcharge_total_cents: sizeUpchargeTotalCents,
+      size_upcharge_cents: sizeUpchargeTotalCents,
       pricing_debug: pricingDebug,
     },
   };

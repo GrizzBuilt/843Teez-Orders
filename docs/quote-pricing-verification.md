@@ -54,6 +54,9 @@ Sell-price behavior:
   `price_per_shirt_cents = 1325` before sleeve.
 - A 10-shirt quote at $12.00 each with two 2XL shirts and a $2.00 2XL upcharge
   should total $124.00: `(1200 * 10) + (200 * 2)`.
+- Size upcharges are per shirt for that size. A 2-shirt quote where both shirts
+  are 2XL and the 2XL upcharge is 228 cents should return
+  `size_upcharge_total_cents = 456`.
 - Sleeve is treated as an add-on. When sleeve is selected, it does not drive the
   base sale-price tier. It adds `sleeve_add_on_price_cents * total_quantity` to
   the customer total through `price_per_shirt_cents` and

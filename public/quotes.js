@@ -297,6 +297,7 @@ function renderCalculation(calculation) {
     pricingDebug.pricingLabel ||
     "";
   const sleeveAddOnPerShirtCents =
+    Number(pricingDebug.sleeveAddOnPerShirtCents) ||
     Number(pricingDebug.sleeveAddOnPricePerShirtCents) || 0;
   const blankUpgradePerShirtCents =
     Number(pricingDebug.blankUpgradePerShirtCents) || 0;
@@ -313,6 +314,8 @@ function renderCalculation(calculation) {
     Number(pricingDebug.blankUpgradeTotalCents) ||
     0;
   const sizeUpchargeCents =
+    Number(totals.size_upcharge_total_cents) ||
+    Number(pricingDebug.sizeUpchargeTotalCents) ||
     Number(totals.size_upcharge_cents) ||
     Number(pricingDebug.sizeUpchargeCents) ||
     0;
@@ -370,10 +373,10 @@ function updateMobileQuoteBar() {
   mobileQuoteBar.hidden = !hasCalculation;
   mobileQuoteBar.classList.toggle("has-calculation", hasCalculation);
   mobileQuoteTotal.textContent = hasCalculation
-    ? `Quote: ${formatMoney(totals.total_price_cents)}`
+    ? `Quote: ${formatMoney(totals.total_price_cents)} · ${formatMoney(totals.price_per_shirt_cents)} each`
     : "Quote: Not calculated";
   mobileQuoteEach.textContent = hasCalculation
-    ? `${formatMoney(totals.price_per_shirt_cents)} each`
+    ? "Ready to save"
     : "Tap Calculate";
 }
 
