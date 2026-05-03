@@ -41,6 +41,17 @@ function formatMoney(cents) {
   }).format((Number(cents) || 0) / 100);
 }
 
+function renderQuoteTotalRow(label, value, className = "") {
+  const rowClass = className ? `quote-total-row ${className}` : "quote-total-row";
+
+  return `
+    <div class="${rowClass}">
+      <strong>${escapeHtml(label)}</strong>
+      <span>${escapeHtml(value)}</span>
+    </div>
+  `;
+}
+
 function formatDate(value) {
   if (!value) return "Not set";
 
@@ -192,44 +203,72 @@ function renderCalculation(calculation) {
   const placementLabels = (item.placement_breakdown || [])
     .map((placement) => placement.label)
     .join(", ");
+  const pricingDebug = totals.pricing_debug || item.pricing_debug || {};
+  const pricingLabel =
+    totals.pricing_label ||
+    calculation.pricing_label ||
+    pricingDebug.pricingLabel ||
+    "";
+  const sleeveAddOnPerShirtCents =
+    Number(pricingDebug.sleeveAddOnPricePerShirtCents) || 0;
+  const blankUpgradePerShirtCents =
+    Number(pricingDebug.blankUpgradePerShirtCents) || 0;
+  const baseDealSubtotalCents =
+    Number(totals.base_deal_subtotal_cents) ||
+    Number(pricingDebug.baseDealSubtotalCents) ||
+    0;
+  const sleeveAddOnTotalCents =
+    Number(totals.sleeve_add_on_total_cents) ||
+    Number(pricingDebug.sleeveAddOnTotalCents) ||
+    0;
+  const blankUpgradeTotalCents =
+    Number(totals.blank_upgrade_total_cents) ||
+    Number(pricingDebug.blankUpgradeTotalCents) ||
+    0;
+  const sizeUpchargeCents =
+    Number(totals.size_upcharge_cents) ||
+    Number(pricingDebug.sizeUpchargeCents) ||
+    0;
+  const dealRows = [
+    pricingLabel
+      ? renderQuoteTotalRow("Pricing Deal", pricingLabel)
+      : "",
+    renderQuoteTotalRow("Base Deal Subtotal", formatMoney(baseDealSubtotalCents)),
+    sleeveAddOnTotalCents > 0
+      ? renderQuoteTotalRow(
+          "Sleeve Add-On",
+          `+${formatMoney(sleeveAddOnPerShirtCents)} each (${formatMoney(sleeveAddOnTotalCents)})`
+        )
+      : "",
+    blankUpgradeTotalCents > 0
+      ? renderQuoteTotalRow(
+          "Blank Upgrade",
+          `+${formatMoney(blankUpgradePerShirtCents)} each (${formatMoney(blankUpgradeTotalCents)})`
+        )
+      : "",
+    sizeUpchargeCents > 0
+      ? renderQuoteTotalRow("Size Upcharges", formatMoney(sizeUpchargeCents))
+      : "",
+  ].join("");
 
   quoteSummaryContent.innerHTML = `
-    <div class="quote-total-row">
-      <strong>Blank</strong>
-      <span>${escapeHtml(item.blank_label)}</span>
-    </div>
-    <div class="quote-total-row">
-      <strong>Print</strong>
-      <span>${escapeHtml(item.print_type)}${placementLabels ? ` - ${escapeHtml(placementLabels)}` : ""}</span>
-    </div>
-    <div class="quote-total-row">
-      <strong>Total Qty</strong>
-      <span>${escapeHtml(totals.total_quantity)}</span>
-    </div>
-    <div class="quote-total-row">
-      <strong>Blank Cost</strong>
-      <span>${formatMoney(totals.blank_cost_cents)}</span>
-    </div>
-    <div class="quote-total-row">
-      <strong>Print Cost</strong>
-      <span>${formatMoney(totals.print_cost_cents)}</span>
-    </div>
-    <div class="quote-total-row">
-      <strong>Setup Fees</strong>
-      <span>${formatMoney(totals.setup_fee_cents)}</span>
-    </div>
-    <div class="quote-total-row">
-      <strong>Per Shirt</strong>
-      <span>${formatMoney(totals.price_per_shirt_cents)}</span>
-    </div>
-    <div class="quote-total-row">
-      <strong>Profit</strong>
-      <span>${formatMoney(totals.profit_cents)}</span>
-    </div>
-    <div class="quote-total-row quote-grand-total">
-      <strong>Total Quote</strong>
-      <span>${formatMoney(totals.total_price_cents)}</span>
-    </div>
+    ${renderQuoteTotalRow("Blank", item.blank_label)}
+    ${renderQuoteTotalRow(
+      "Print",
+      `${item.print_type}${placementLabels ? ` - ${placementLabels}` : ""}`
+    )}
+    ${renderQuoteTotalRow("Total Qty", totals.total_quantity)}
+    ${dealRows}
+    ${renderQuoteTotalRow("Per Shirt", formatMoney(totals.price_per_shirt_cents))}
+    ${renderQuoteTotalRow("Blank Cost", formatMoney(totals.blank_cost_cents))}
+    ${renderQuoteTotalRow("Print Cost", formatMoney(totals.print_cost_cents))}
+    ${renderQuoteTotalRow("Setup Fees", formatMoney(totals.setup_fee_cents))}
+    ${renderQuoteTotalRow("Profit", formatMoney(totals.profit_cents))}
+    ${renderQuoteTotalRow(
+      "Final Quote Total",
+      formatMoney(totals.total_price_cents),
+      "quote-grand-total"
+    )}
   `;
 }
 

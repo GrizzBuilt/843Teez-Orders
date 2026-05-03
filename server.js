@@ -1227,6 +1227,43 @@ function formatCentsForNote(cents) {
   return `$${((Number(cents) || 0) / 100).toFixed(2)}`;
 }
 
+function formatCentsCompact(cents) {
+  const amount = (Number(cents) || 0) / 100;
+
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
+function buildPricingLabel(rule, totalQuantity) {
+  const quantity = Number(totalQuantity) || 0;
+  const pricePerShirtCents = normalizeMoneyCents(
+    rule?.print_price_per_shirt_cents
+  );
+  const minQuantity = Number(rule?.min_quantity) || 0;
+  const maxQuantity =
+    rule?.max_quantity == null ? null : Number(rule.max_quantity) || 0;
+
+  if (quantity === 1 && minQuantity === 1 && maxQuantity === 1) {
+    return `1 shirt: ${formatCentsCompact(pricePerShirtCents)}`;
+  }
+
+  if (
+    quantity > 1 &&
+    quantity <= 4 &&
+    minQuantity === quantity &&
+    maxQuantity === quantity
+  ) {
+    return `${quantity} for ${formatCentsCompact(pricePerShirtCents * quantity)}`;
+  }
+
+  const shirtLabel = quantity === 1 ? "shirt" : "shirts";
+  return `${quantity} ${shirtLabel} at ${formatCentsCompact(pricePerShirtCents)} each`;
+}
+
 function getPlacementLabels(placements) {
   return placements
     .map((placement) => QUOTE_PLACEMENTS[placement] || placement)
@@ -1491,6 +1528,7 @@ async function calculateQuote(input) {
   let basePricePerShirtCents = 0;
   let sleeveAddOnPricePerShirtCents = 0;
   let selectedPriceRuleId = null;
+  let selectedPriceRule = null;
   const calculatedPlacements = [];
   const hasSleeve = placements.includes("sleeve");
   const basePlacements = placements.filter((placement) => placement !== "sleeve");
@@ -1567,6 +1605,7 @@ async function calculateQuote(input) {
 
     if (!selectedPriceRuleId || rulePricePerShirtCents > basePricePerShirtCents) {
       selectedPriceRuleId = rule.id;
+      selectedPriceRule = rule;
       basePricePerShirtCents = rulePricePerShirtCents;
     }
 
@@ -1597,6 +1636,10 @@ async function calculateQuote(input) {
     basePricePerShirtCents +
     blankUpgradePerShirtCents +
     sleeveAddOnPricePerShirtCents;
+  const pricingLabel = buildPricingLabel(selectedPriceRule, totalQuantity);
+  const baseDealSubtotalCents = basePricePerShirtCents * totalQuantity;
+  const blankUpgradeTotalCents = blankUpgradePerShirtCents * totalQuantity;
+  const sleeveAddOnTotalCents = sleeveAddOnPricePerShirtCents * totalQuantity;
   const totalPriceCents =
     pricePerShirtCents * totalQuantity + sizeUpchargeCents;
   const profitCents =
@@ -1612,11 +1655,17 @@ async function calculateQuote(input) {
     rawBlankUpgradePerShirtCents,
     blankUpgradePerShirtCents,
     sleeveAddOnPricePerShirtCents,
+    pricingLabel,
+    baseDealSubtotalCents,
+    blankUpgradeTotalCents,
+    sleeveAddOnTotalCents,
+    sizeUpchargeCents,
     pricePerShirtCents,
     totalPriceCents,
   };
 
   return {
+    pricing_label: pricingLabel,
     pricing_debug: pricingDebug,
     item: {
       shirt_blank_id: shirtBlankId,
@@ -1635,6 +1684,11 @@ async function calculateQuote(input) {
       total_price_cents: totalPriceCents,
       price_per_shirt_cents: pricePerShirtCents,
       profit_cents: profitCents,
+      pricing_label: pricingLabel,
+      base_deal_subtotal_cents: baseDealSubtotalCents,
+      blank_upgrade_total_cents: blankUpgradeTotalCents,
+      sleeve_add_on_total_cents: sleeveAddOnTotalCents,
+      size_upcharge_cents: sizeUpchargeCents,
       pricing_debug: pricingDebug,
     },
     totals: {
@@ -1645,6 +1699,11 @@ async function calculateQuote(input) {
       total_price_cents: totalPriceCents,
       price_per_shirt_cents: pricePerShirtCents,
       profit_cents: profitCents,
+      pricing_label: pricingLabel,
+      base_deal_subtotal_cents: baseDealSubtotalCents,
+      blank_upgrade_total_cents: blankUpgradeTotalCents,
+      sleeve_add_on_total_cents: sleeveAddOnTotalCents,
+      size_upcharge_cents: sizeUpchargeCents,
       pricing_debug: pricingDebug,
     },
   };
