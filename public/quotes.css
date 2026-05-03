@@ -218,8 +218,17 @@
 }
 
 .sleeve-toggle-card {
-  width: 100%;
+  display: inline-flex;
+  width: auto;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
   margin-top: 0.75rem;
+  padding: 0.45rem 0.7rem;
+}
+
+.sleeve-toggle-card strong {
+  font-size: 0.84rem;
 }
 
 .custom-placement-options {
@@ -583,6 +592,11 @@ body.dark-mode .quote-status-pill {
   .print-preset-card {
     min-height: 58px;
     padding: 0.9rem;
+  }
+
+  .sleeve-toggle-card {
+    min-height: 44px;
+    padding: 0.55rem 0.75rem;
   }
 
   .quote-checkboxes {
