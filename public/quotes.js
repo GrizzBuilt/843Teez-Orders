@@ -292,6 +292,7 @@ function getSelectedPlacements() {
 
 function getQuotePayload() {
   const formData = new FormData(quoteForm);
+  const printType = String(formData.get("print_type") || "DTF").trim() || "DTF";
 
   return {
     customer_name: String(formData.get("customer_name") || "").trim(),
@@ -302,11 +303,35 @@ function getQuotePayload() {
     item: {
       shirt_blank_id: Number(formData.get("shirt_blank_id") || 0),
       color: String(formData.get("color") || "").trim(),
-      print_type: String(formData.get("print_type") || "").trim(),
+      print_type: printType,
       placements: getSelectedPlacements(),
       sizes: getSizeQuantities(),
     },
   };
+}
+
+function getMissingQuoteInputMessage() {
+  const payload = getQuotePayload();
+  const placements = payload.item.placements || [];
+  const hasBasePlacement = placements.some((placement) => placement !== "sleeve");
+  const totalQuantity = Object.values(payload.item.sizes || {}).reduce(
+    (sum, quantity) => sum + (Number(quantity) || 0),
+    0
+  );
+
+  if (!payload.item.shirt_blank_id) {
+    return "Choose a shirt blank before calculating.";
+  }
+
+  if (!hasBasePlacement) {
+    return "Choose a base print setup before calculating.";
+  }
+
+  if (totalQuantity < 1) {
+    return "Enter at least one shirt quantity before calculating.";
+  }
+
+  return "";
 }
 
 function renderCalculation(calculation) {
@@ -500,6 +525,13 @@ async function loadBlanks() {
 
 async function calculateQuote() {
   clearQuoteError();
+  const missingInputMessage = getMissingQuoteInputMessage();
+
+  if (missingInputMessage) {
+    showQuoteError(missingInputMessage);
+    return null;
+  }
+
   isCalculatingQuote = true;
   setBusyState();
 
@@ -569,7 +601,7 @@ function setFormValue(name, value) {
   const field = quoteForm?.elements?.[name];
 
   if (field) {
-    field.value = value ?? "";
+    field.value = name === "print_type" ? value || "DTF" : value ?? "";
   }
 }
 
