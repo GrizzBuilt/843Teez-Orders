@@ -1510,6 +1510,8 @@ async function calculateQuote(input) {
   const shirtBlankId = Number(itemInput.shirt_blank_id);
   const printType = normalizePrintType(itemInput.print_type);
   const placements = normalizeQuotePlacements(itemInput.placements);
+  const hasSleeve = placements.includes("sleeve");
+  const basePlacements = placements.filter((placement) => placement !== "sleeve");
   const sizes = normalizeQuoteSizes(itemInput.sizes);
   const totalQuantity = sizes.reduce((sum, size) => sum + size.quantity, 0);
 
@@ -1525,8 +1527,12 @@ async function calculateQuote(input) {
     throw error;
   }
 
-  if (!placements.length) {
-    const error = new Error("At least one print placement is required");
+  if (!basePlacements.length) {
+    const error = new Error(
+      hasSleeve
+        ? "Choose a base print placement with sleeve."
+        : "At least one print placement is required"
+    );
     error.status = 400;
     throw error;
   }
@@ -1646,19 +1652,12 @@ async function calculateQuote(input) {
   let setupFeeCents = 0;
   let basePricePerShirtCents = 0;
   const sleeveAddOnPerShirtCents = hasSleeve ? SLEEVE_ADD_ON_PRICE_CENTS : 0;
+  const sleeveAddOnTotalCents = sleeveAddOnPerShirtCents * totalQuantity;
   let selectedPriceRuleId = null;
   let selectedPriceRule = null;
   const calculatedPlacements = [];
-  const hasSleeve = placements.includes("sleeve");
-  const basePlacements = placements.filter((placement) => placement !== "sleeve");
 
-  if (!basePlacements.length) {
-    const error = new Error("At least one non-sleeve print placement is required");
-    error.status = 400;
-    throw error;
-  }
-
-  for (const placement of placements) {
+  for (const placement of basePlacements) {
     const rule = await dbGet(
       `
         SELECT *
@@ -1691,34 +1690,6 @@ async function calculateQuote(input) {
 
     setupFeeCents += ruleSetupFeeCents;
 
-    if (placement === "sleeve") {
-      const ruleSleeveAddOnPriceCents = normalizeMoneyCents(
-        rule.sleeve_add_on_price_cents
-      );
-      const ruleSleeveAddOnCostCents = normalizeMoneyCents(
-        rule.sleeve_add_on_cost_cents
-      );
-      const sleeveAddOnCostCents = ruleSleeveAddOnCostCents * totalQuantity;
-
-      printCostCents += sleeveAddOnCostCents;
-
-      calculatedPlacements.push({
-        placement,
-        label: QUOTE_PLACEMENTS[placement],
-        rule_id: rule.id,
-        setup_fee_cents: ruleSetupFeeCents,
-        print_cost_per_shirt_cents: normalizeMoneyCents(rule.print_cost_per_shirt_cents),
-        print_price_per_shirt_cents: rulePricePerShirtCents,
-        sleeve_add_on_price_cents: ruleSleeveAddOnPriceCents,
-        sleeve_add_on_cost_cents: ruleSleeveAddOnCostCents,
-        print_cost_cents: sleeveAddOnCostCents,
-        print_price_cents: ruleSleeveAddOnPriceCents * totalQuantity,
-        is_add_on: true,
-      });
-
-      continue;
-    }
-
     printCostCents += rulePrintCostCents;
 
     if (!selectedPriceRuleId || rulePricePerShirtCents > basePricePerShirtCents) {
@@ -1742,6 +1713,61 @@ async function calculateQuote(input) {
     });
   }
 
+  if (hasSleeve) {
+    const sleeveRule = await dbGet(
+      `
+        SELECT *
+        FROM print_pricing_rules
+        WHERE active = 1
+          AND print_type = ?
+          AND placement = ?
+          AND min_quantity <= ?
+          AND (max_quantity IS NULL OR ? <= max_quantity)
+        ORDER BY min_quantity DESC
+        LIMIT 1
+      `,
+      [printType, "sleeve", totalQuantity, totalQuantity]
+    );
+
+    if (!sleeveRule) {
+      const error = new Error(
+        `No print pricing rule found for ${printType} ${QUOTE_PLACEMENTS.sleeve} at quantity ${totalQuantity}`
+      );
+      error.status = 400;
+      throw error;
+    }
+
+    const sleeveSetupFeeCents = normalizeMoneyCents(sleeveRule.setup_fee_cents);
+    const sleevePrintCostPerShirtCents = normalizeMoneyCents(
+      sleeveRule.print_cost_per_shirt_cents
+    );
+    const sleevePrintCostCents = sleevePrintCostPerShirtCents * totalQuantity;
+    const sleeveAddOnCostCents = normalizeMoneyCents(
+      sleeveRule.sleeve_add_on_cost_cents
+    ) * totalQuantity;
+
+    setupFeeCents += sleeveSetupFeeCents;
+    printCostCents += sleeveAddOnCostCents || sleevePrintCostCents;
+
+    calculatedPlacements.push({
+      placement: "sleeve",
+      label: QUOTE_PLACEMENTS.sleeve,
+      rule_id: sleeveRule.id,
+      setup_fee_cents: sleeveSetupFeeCents,
+      print_cost_per_shirt_cents: sleevePrintCostPerShirtCents,
+      print_price_per_shirt_cents: normalizeMoneyCents(
+        sleeveRule.print_price_per_shirt_cents
+      ),
+      sleeve_add_on_price_cents: sleeveAddOnPerShirtCents,
+      sleeve_add_on_cost_cents: normalizeMoneyCents(
+        sleeveRule.sleeve_add_on_cost_cents
+      ),
+      print_cost_cents: sleeveAddOnCostCents || sleevePrintCostCents,
+      print_price_cents: sleeveAddOnTotalCents,
+      is_add_on: true,
+    });
+  }
+
   calculatedPlacements.forEach((placement) => {
     placement.selected_price_rule = placement.rule_id === selectedPriceRuleId;
   });
@@ -1753,7 +1779,6 @@ async function calculateQuote(input) {
   const pricingLabel = buildPricingLabel(selectedPriceRule, totalQuantity);
   const baseDealSubtotalCents = basePricePerShirtCents * totalQuantity;
   const blankUpgradeTotalCents = blankUpgradePerShirtCents * totalQuantity;
-  const sleeveAddOnTotalCents = sleeveAddOnPerShirtCents * totalQuantity;
   const totalPriceCents =
     baseDealSubtotalCents +
     sleeveAddOnTotalCents +
