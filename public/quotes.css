@@ -217,6 +217,11 @@
   box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.35);
 }
 
+.sleeve-toggle-card {
+  width: 100%;
+  margin-top: 0.75rem;
+}
+
 .custom-placement-options {
   margin-top: 0.75rem;
 }

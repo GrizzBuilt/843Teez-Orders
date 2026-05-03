@@ -43,6 +43,7 @@ const mobileCalculateQuoteBtn = document.getElementById("mobile-calculate-quote-
 const mobileSaveQuoteBtn = document.getElementById("mobile-save-quote-btn");
 const customPlacementOptions = document.querySelector(".custom-placement-options");
 const printPresetCards = Array.from(document.querySelectorAll(".print-preset-card"));
+const sleeveToggleCard = document.getElementById("sleeve-toggle-card");
 
 let isSavingQuote = false;
 let isCalculatingQuote = false;
@@ -51,6 +52,7 @@ let editingQuoteId = null;
 let selectedPrintPreset = "full_front";
 let lastCalculation = null;
 let quoteBlanks = [];
+let isSleeveSelected = false;
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -242,7 +244,7 @@ function getPresetPlacements() {
 
 function setCustomPlacementValues(placements) {
   document.querySelectorAll('input[name="placements"]').forEach((input) => {
-    input.checked = placements.includes(input.value);
+    input.checked = input.value !== "sleeve" && placements.includes(input.value);
   });
 }
 
@@ -256,10 +258,16 @@ function syncPrintPresetUi() {
   if (customPlacementOptions) {
     customPlacementOptions.hidden = selectedPrintPreset !== "custom";
   }
+
+  if (sleeveToggleCard) {
+    sleeveToggleCard.classList.toggle("is-selected", isSleeveSelected);
+    sleeveToggleCard.setAttribute("aria-pressed", isSleeveSelected ? "true" : "false");
+  }
 }
 
 function setPrintPreset(preset, placements = []) {
   selectedPrintPreset = preset || "full_front";
+  isSleeveSelected = placements.includes("sleeve") || isSleeveSelected;
 
   if (selectedPrintPreset === "custom") {
     setCustomPlacementValues(placements);
@@ -272,7 +280,10 @@ function setPrintPreset(preset, placements = []) {
 }
 
 function getPresetForPlacements(placements) {
-  const normalizedPlacements = [...placements].sort().join(",");
+  const normalizedPlacements = placements
+    .filter((placement) => placement !== "sleeve")
+    .sort()
+    .join(",");
   const matchedCard = printPresetCards.find((card) => {
     const cardPlacements = String(card.dataset.placements || "")
       .split(",")
@@ -290,14 +301,23 @@ function getPresetForPlacements(placements) {
 function getSelectedPlacements() {
   const activePresetCard = getActivePresetCard();
   const activePreset = activePresetCard?.dataset.preset || selectedPrintPreset;
+  let placements = [];
 
   if (activePreset !== "custom") {
-    return getPlacementsFromPresetCard(activePresetCard);
+    placements = getPlacementsFromPresetCard(activePresetCard);
+  } else {
+    placements = Array.from(
+      document.querySelectorAll('input[name="placements"]:checked')
+    ).map((input) => input.value);
   }
 
-  return Array.from(
-    document.querySelectorAll('input[name="placements"]:checked')
-  ).map((input) => input.value);
+  const basePlacements = placements.filter((placement) => placement !== "sleeve");
+
+  if (isSleeveSelected) {
+    basePlacements.push("sleeve");
+  }
+
+  return [...new Set(basePlacements)];
 }
 
 function getQuotePayload() {
@@ -621,6 +641,7 @@ function setFormValue(name, value) {
 function resetQuoteForm() {
   editingQuoteId = null;
   quoteForm?.reset();
+  isSleeveSelected = false;
   setPrintPreset("full_front");
   renderSizeInputs();
   closeSavePanel();
@@ -678,6 +699,7 @@ async function editQuoteDraft(quoteId) {
     setFormValue("print_type", item.print_type);
 
     const placements = item.placements || [];
+    isSleeveSelected = placements.includes("sleeve");
     setPrintPreset(getPresetForPlacements(placements), placements);
 
     renderSizeInputs();
@@ -1042,6 +1064,8 @@ closeSavePanelBtn?.addEventListener("click", () => {
 });
 
 printPresetCards.forEach((card) => {
+  if (card === sleeveToggleCard) return;
+
   card.addEventListener("click", () => {
     const currentPlacements = getSelectedPlacements();
     setPrintPreset(
@@ -1049,6 +1073,12 @@ printPresetCards.forEach((card) => {
       card.dataset.preset === "custom" ? currentPlacements : []
     );
   });
+});
+
+sleeveToggleCard?.addEventListener("click", () => {
+  isSleeveSelected = !isSleeveSelected;
+  syncPrintPresetUi();
+  invalidateCalculation();
 });
 
 quoteForm?.addEventListener("input", (event) => {

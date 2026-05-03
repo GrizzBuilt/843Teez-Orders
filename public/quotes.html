@@ -109,14 +109,6 @@
               <button
                 type="button"
                 class="print-preset-card"
-                data-preset="full_front_full_back_sleeve"
-                data-placements="full_front,full_back,sleeve"
-              >
-                <strong>Full Front + Full Back + Sleeve</strong>
-              </button>
-              <button
-                type="button"
-                class="print-preset-card"
                 data-preset="custom"
               >
                 <strong>Custom</strong>
@@ -136,11 +128,16 @@
                 <input type="checkbox" name="placements" value="full_back" />
                 <span>Full Back</span>
               </label>
-              <label>
-                <input type="checkbox" name="placements" value="sleeve" />
-                <span>Sleeve</span>
-              </label>
             </div>
+
+            <button
+              type="button"
+              class="print-preset-card sleeve-toggle-card"
+              id="sleeve-toggle-card"
+              aria-pressed="false"
+            >
+              <strong>Add Sleeve +$3/shirt</strong>
+            </button>
           </div>
 
           <div class="quote-section">
