@@ -4,7 +4,21 @@
  * Purpose: Frontend logic for quote pricing admin
  */
 
-const PRICING_SIZES = ["YS", "YM", "YL", "XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL"];
+const PRICING_SIZES = [
+  "YS",
+  "YM",
+  "YL",
+  "XS",
+  "S",
+  "M",
+  "L",
+  "XL",
+  "2XL",
+  "3XL",
+  "4XL",
+  "5XL",
+  "6XL",
+];
 
 const PLACEMENT_LABELS = {
   left_chest: "Left Chest",
@@ -91,8 +105,10 @@ function renderSizeCostInputs() {
 
   blankSizeCosts.innerHTML = PRICING_SIZES.map(
     (size) => `
-      <label class="size-field">
-        <span>${escapeHtml(size)}</span>
+      <div class="size-field pricing-size-cost-field">
+        <label>
+          <span>${escapeHtml(size)}</span>
+        </label>
         <input
           type="number"
           min="0"
@@ -100,9 +116,17 @@ function renderSizeCostInputs() {
           inputmode="decimal"
           value="0.00"
           data-size-cost="${escapeHtml(size)}"
-          aria-label="${escapeHtml(size)} upcharge"
+          aria-label="${escapeHtml(size)} actual blank cost"
         />
-      </label>
+        <label class="pricing-size-available">
+          <input
+            type="checkbox"
+            checked
+            data-size-available="${escapeHtml(size)}"
+          />
+          <span>Available</span>
+        </label>
+      </div>
     `
   ).join("");
 }
@@ -129,6 +153,9 @@ function resetBlankForm() {
   blankSizeCosts?.querySelectorAll("input[data-size-cost]").forEach((input) => {
     input.value = "0.00";
   });
+  blankSizeCosts?.querySelectorAll("input[data-size-available]").forEach((input) => {
+    input.checked = true;
+  });
 
   clearError(blankError);
 }
@@ -147,9 +174,13 @@ function resetRuleForm() {
 function getBlankPayload() {
   const formData = new FormData(blankForm);
   const sizeCosts = {};
+  const sizeAvailability = {};
 
   blankSizeCosts?.querySelectorAll("input[data-size-cost]").forEach((input) => {
     sizeCosts[input.dataset.sizeCost] = inputToCents(input.value);
+  });
+  blankSizeCosts?.querySelectorAll("input[data-size-available]").forEach((input) => {
+    sizeAvailability[input.dataset.sizeAvailable] = input.checked;
   });
 
   return {
@@ -160,6 +191,7 @@ function getBlankPayload() {
     base_cost_cents: inputToCents(formData.get("base_cost")),
     active: document.getElementById("blank_active").checked,
     size_costs: sizeCosts,
+    size_availability: sizeAvailability,
   };
 }
 
@@ -219,6 +251,10 @@ function editBlank(blankId) {
   blankSizeCosts?.querySelectorAll("input[data-size-cost]").forEach((input) => {
     input.value = centsToInput(blank.size_costs?.[input.dataset.sizeCost] || 0);
   });
+  blankSizeCosts?.querySelectorAll("input[data-size-available]").forEach((input) => {
+    const value = blank.size_availability?.[input.dataset.sizeAvailable];
+    input.checked = value == null ? true : Number(value) === 1;
+  });
 
   clearError(blankError);
   blankForm?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -263,7 +299,12 @@ function renderBlanks() {
       const sizeSummary = PRICING_SIZES.filter(
         (size) => Number(blank.size_costs?.[size]) > 0
       )
-        .map((size) => `${size} ${formatMoney(blank.size_costs[size])}`)
+        .map((size) => {
+          const available = blank.size_availability?.[size] == null
+            ? true
+            : Number(blank.size_availability[size]) === 1;
+          return `${size} ${formatMoney(blank.size_costs[size])}${available ? "" : " unavailable"}`;
+        })
         .join(" - ");
 
       return `
@@ -284,7 +325,7 @@ function renderBlanks() {
             </button>
           </div>
           <p>Base cost ${formatMoney(blank.base_cost_cents)}</p>
-          <p>${escapeHtml(sizeSummary || "No size upcharges")}</p>
+          <p>${escapeHtml(sizeSummary || "No size-specific actual costs")}</p>
           <div class="pricing-card-actions">
             <button
               type="button"

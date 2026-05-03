@@ -265,6 +265,20 @@
   min-height: 46px;
 }
 
+.size-field small {
+  color: var(--text-soft);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.size-field-unavailable {
+  opacity: 0.62;
+}
+
+.size-field-unavailable input {
+  cursor: not-allowed;
+}
+
 .quote-count-pill {
   display: inline-flex;
   align-items: center;

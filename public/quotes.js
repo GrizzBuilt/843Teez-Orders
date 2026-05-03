@@ -4,7 +4,21 @@
  * Purpose: Frontend logic for the draft quote builder
  */
 
-const QUOTE_SIZES = ["YS", "YM", "YL", "XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL"];
+const QUOTE_SIZES = [
+  "YS",
+  "YM",
+  "YL",
+  "XS",
+  "S",
+  "M",
+  "L",
+  "XL",
+  "2XL",
+  "3XL",
+  "4XL",
+  "5XL",
+  "6XL",
+];
 
 const quoteForm = document.getElementById("quote-form");
 const blankSelect = document.getElementById("shirt_blank_id");
@@ -36,6 +50,7 @@ let quoteSearchTimer = null;
 let editingQuoteId = null;
 let selectedPrintPreset = "full_front";
 let lastCalculation = null;
+let quoteBlanks = [];
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -133,9 +148,19 @@ async function parseApiResponse(response, fallbackMessage) {
 function renderSizeInputs() {
   if (!sizeGrid) return;
 
+  const selectedBlank = quoteBlanks.find(
+    (blank) => String(blank.id) === String(blankSelect?.value || "")
+  );
+  const availability = selectedBlank?.size_availability || {};
+
   sizeGrid.innerHTML = QUOTE_SIZES.map(
-    (size) => `
-      <label class="size-field">
+    (size) => {
+      const isAvailable = availability[size] == null
+        ? true
+        : Number(availability[size]) === 1;
+
+      return `
+      <label class="size-field ${isAvailable ? "" : "size-field-unavailable"}">
         <span>${escapeHtml(size)}</span>
         <input
           type="number"
@@ -145,9 +170,12 @@ function renderSizeInputs() {
           value="0"
           data-size="${escapeHtml(size)}"
           aria-label="${escapeHtml(size)} quantity"
+          ${isAvailable ? "" : "disabled"}
         />
+        ${isAvailable ? "" : `<small>Unavailable</small>`}
       </label>
-    `
+    `;
+    }
   ).join("");
 
   sizeGrid.querySelectorAll("input[data-size]").forEach((input) => {
@@ -161,7 +189,9 @@ function getSizeQuantities() {
   const sizes = {};
 
   sizeGrid?.querySelectorAll("input[data-size]").forEach((input) => {
-    sizes[input.dataset.size] = Math.max(0, Math.floor(Number(input.value) || 0));
+    sizes[input.dataset.size] = input.disabled
+      ? 0
+      : Math.max(0, Math.floor(Number(input.value) || 0));
   });
 
   return sizes;
@@ -439,6 +469,7 @@ function setBusyState() {
 async function loadBlanks() {
   const response = await fetch("/api/shirt-blanks");
   const blanks = await parseApiResponse(response, "Failed to load shirt blanks");
+  quoteBlanks = blanks;
 
   if (!blankSelect) return;
 
@@ -455,6 +486,16 @@ async function loadBlanks() {
       )
       .join("")}
   `;
+
+  const pc43 = blanks.find(
+    (blank) => String(blank.style_number || "").toUpperCase() === "PC43"
+  );
+
+  if (pc43 && !blankSelect.value) {
+    blankSelect.value = String(pc43.id);
+  }
+
+  renderSizeInputs();
 }
 
 async function calculateQuote() {
@@ -557,6 +598,10 @@ function ensureBlankOption(item) {
   option.value = value;
   option.textContent = item.blank_label || `Blank #${value}`;
   blankSelect.append(option);
+  quoteBlanks.push({
+    id: item.shirt_blank_id,
+    size_availability: {},
+  });
 }
 
 async function editQuoteDraft(quoteId) {
@@ -999,6 +1044,21 @@ quoteSearch?.addEventListener("input", () => {
 });
 
 quoteStatusFilter?.addEventListener("change", loadQuotes);
+
+blankSelect?.addEventListener("change", () => {
+  const quantities = getSizeQuantities();
+  renderSizeInputs();
+
+  sizeGrid?.querySelectorAll("input[data-size]").forEach((input) => {
+    const quantity = quantities[input.dataset.size] || 0;
+    if (!input.disabled) {
+      input.value = quantity;
+    }
+  });
+
+  updateQuantityTotal();
+  invalidateCalculation();
+});
 
 setPrintPreset("full_front");
 renderSizeInputs();

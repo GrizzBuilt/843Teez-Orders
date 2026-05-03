@@ -32,6 +32,28 @@
   gap: 0.65rem;
 }
 
+.pricing-size-cost-field {
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  padding: 0.65rem;
+  background: var(--surface-muted);
+}
+
+.pricing-size-available {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.pricing-size-available input {
+  width: auto;
+  min-height: 18px;
+  accent-color: var(--brand-blue);
+}
+
 .pricing-list {
   display: flex;
   flex-direction: column;

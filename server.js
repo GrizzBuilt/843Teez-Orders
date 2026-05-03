@@ -380,12 +380,22 @@ db.serialize(() => {
       shirt_blank_id INTEGER NOT NULL,
       size_label TEXT NOT NULL,
       extra_cost_cents INTEGER NOT NULL DEFAULT 0,
+      available INTEGER NOT NULL DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(shirt_blank_id, size_label),
       FOREIGN KEY (shirt_blank_id) REFERENCES shirt_blanks(id)
     )
   `);
+
+  db.run(
+    `ALTER TABLE shirt_blank_size_costs ADD COLUMN available INTEGER NOT NULL DEFAULT 1`,
+    (err) => {
+      if (err && !/duplicate column name/i.test(err.message)) {
+        console.error("Error adding size availability column:", err.message);
+      }
+    }
+  );
 
   db.run(`
     CREATE TABLE IF NOT EXISTS print_pricing_rules (
@@ -478,7 +488,7 @@ db.serialize(() => {
   );
 
   [
-    ["Port and Co", "PC43", "Basic Tee", "Go-to tee for quote pricing", 300],
+    ["Port and Co", "PC43", "Basic Tee", "Go-to tee for quote pricing", 204],
     ["Gildan", "5000", "Heavy Cotton Tee", "Budget-friendly everyday tee", 325],
     ["Gildan", "64000", "Softstyle Tee", "Softer retail-feel tee", 425],
     ["Bella+Canvas", "3001", "Unisex Jersey Tee", "Premium retail tee", 625],
@@ -524,6 +534,23 @@ db.serialize(() => {
   db.run(
     `
       UPDATE shirt_blanks
+      SET base_cost_cents = 204,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE brand = ?
+        AND style_number = ?
+        AND base_cost_cents = 300
+    `,
+    [BASE_PRICING_BLANK_BRAND, BASE_PRICING_BLANK_STYLE_NUMBER],
+    (err) => {
+      if (err) {
+        console.error("Error correcting PC43 base cost:", err.message);
+      }
+    }
+  );
+
+  db.run(
+    `
+      UPDATE shirt_blanks
       SET active = 0,
           updated_at = CURRENT_TIMESTAMP
       WHERE brand = ?
@@ -543,13 +570,23 @@ db.serialize(() => {
     }
   );
 
-  const defaultSizeUpcharges = [
-    ["2XL", 228],
-    ["3XL", 300],
-    ["4XL", 400],
+  const defaultSizeActualCosts = [
+    ["YS", 204],
+    ["YM", 204],
+    ["YL", 204],
+    ["XS", 204],
+    ["S", 204],
+    ["M", 204],
+    ["L", 204],
+    ["XL", 204],
+    ["2XL", 318],
+    ["3XL", 419],
+    ["4XL", 419],
+    ["5XL", 419],
+    ["6XL", 419],
   ];
 
-  defaultSizeUpcharges.forEach(([sizeLabel, extraCostCents]) => {
+  defaultSizeActualCosts.forEach(([sizeLabel, actualCostCents]) => {
     db.run(
       `
         INSERT OR IGNORE INTO shirt_blank_size_costs (
@@ -559,11 +596,18 @@ db.serialize(() => {
         )
         SELECT id, ?, ?
         FROM shirt_blanks
+        WHERE brand = ?
+          AND style_number = ?
       `,
-      [sizeLabel, extraCostCents],
+      [
+        sizeLabel,
+        actualCostCents,
+        BASE_PRICING_BLANK_BRAND,
+        BASE_PRICING_BLANK_STYLE_NUMBER,
+      ],
       (err) => {
         if (err) {
-          console.error("Error seeding blank size cost:", err.message);
+          console.error("Error seeding PC43 size actual cost:", err.message);
         }
       }
     );
@@ -572,14 +616,43 @@ db.serialize(() => {
   db.run(
     `
       UPDATE shirt_blank_size_costs
-      SET extra_cost_cents = 228,
+      SET extra_cost_cents = 318,
           updated_at = CURRENT_TIMESTAMP
       WHERE size_label = '2XL'
-        AND extra_cost_cents = 114
+        AND extra_cost_cents IN (114, 200, 228)
+        AND shirt_blank_id IN (
+          SELECT id
+          FROM shirt_blanks
+          WHERE brand = ?
+            AND style_number = ?
+        )
     `,
+    [BASE_PRICING_BLANK_BRAND, BASE_PRICING_BLANK_STYLE_NUMBER],
     (err) => {
       if (err) {
-        console.error("Error correcting 2XL size upcharge:", err.message);
+        console.error("Error correcting PC43 2XL actual size cost:", err.message);
+      }
+    }
+  );
+
+  db.run(
+    `
+      UPDATE shirt_blank_size_costs
+      SET extra_cost_cents = 419,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE size_label IN ('3XL', '4XL')
+        AND extra_cost_cents IN (300, 400)
+        AND shirt_blank_id IN (
+          SELECT id
+          FROM shirt_blanks
+          WHERE brand = ?
+            AND style_number = ?
+        )
+    `,
+    [BASE_PRICING_BLANK_BRAND, BASE_PRICING_BLANK_STYLE_NUMBER],
+    (err) => {
+      if (err) {
+        console.error("Error correcting PC43 3XL/4XL actual size cost:", err.message);
       }
     }
   );
@@ -1149,6 +1222,8 @@ const QUOTE_SIZE_ORDER = [
   "2XL",
   "3XL",
   "4XL",
+  "5XL",
+  "6XL",
 ];
 
 const QUOTE_PLACEMENTS = {
@@ -1175,11 +1250,6 @@ function normalizeQuoteListStatus(value) {
 function normalizeMoneyCents(value) {
   const cents = Number(value);
   return Number.isFinite(cents) ? Math.max(0, Math.round(cents)) : 0;
-}
-
-function normalizeSizeUpchargeCents(value) {
-  const cents = Number(value);
-  return Number.isFinite(cents) ? Math.round(cents) : 0;
 }
 
 function normalizeActive(value) {
@@ -1514,7 +1584,7 @@ async function calculateQuote(input) {
 
   const sizeCosts = await dbAll(
     `
-      SELECT size_label, extra_cost_cents
+      SELECT size_label, extra_cost_cents, available
       FROM shirt_blank_size_costs
       WHERE shirt_blank_id = ?
     `,
@@ -1524,23 +1594,43 @@ async function calculateQuote(input) {
   const sizeCostMap = new Map(
     sizeCosts.map((row) => [
       row.size_label,
-      normalizeSizeUpchargeCents(row.extra_cost_cents),
+      {
+        actual_cost_cents: normalizeMoneyCents(row.extra_cost_cents),
+        available: normalizeActive(row.available),
+      },
     ])
   );
 
   let blankCostCents = 0;
+  const sizeActualCosts = {};
 
   const calculatedSizes = sizes.map((size) => {
-    const blankExtraCostCents = sizeCostMap.get(size.size_label) || 0;
+    const sizeCost = sizeCostMap.get(size.size_label);
+
+    if (sizeCost && !sizeCost.available) {
+      const error = new Error(`${size.size_label} is unavailable for ${getBlankLabel(blank)}`);
+      error.status = 400;
+      throw error;
+    }
+
+    const sizeActualCostCents = sizeCost?.actual_cost_cents > 0
+      ? sizeCost.actual_cost_cents
+      : selectedBlankBaseCostCents;
+    const blankExtraCostCents = Math.max(
+      0,
+      sizeActualCostCents - selectedBlankBaseCostCents
+    );
     const lineSizeUpchargeCents = blankExtraCostCents * size.quantity;
-    const lineCostCents =
-      (selectedBlankBaseCostCents + blankExtraCostCents) * size.quantity;
+    const lineCostCents = sizeActualCostCents * size.quantity;
+
+    sizeActualCosts[size.size_label] = sizeActualCostCents;
 
     blankCostCents += lineCostCents;
 
     return {
       ...size,
       blank_extra_cost_cents: blankExtraCostCents,
+      actual_blank_cost_cents: sizeActualCostCents,
       line_cost_cents: lineCostCents,
       size_upcharge_cents: lineSizeUpchargeCents,
     };
@@ -1674,6 +1764,7 @@ async function calculateQuote(input) {
   console.log("SIZE DEBUG", {
     sizes,
     calculatedSizes,
+    sizeActualCosts,
     sizeUpchargeTotalCents,
     totalQuantity,
     pricePerShirtCents,
@@ -1695,8 +1786,10 @@ async function calculateQuote(input) {
     baseDealSubtotalCents,
     blankUpgradeTotalCents,
     sleeveAddOnTotalCents,
+    sizeActualCosts,
     sizeUpchargeTotalCents,
     sizeUpchargeCents: sizeUpchargeTotalCents,
+    blankCostCents,
     pricePerShirtCents,
     totalPriceCents,
   };
@@ -1774,7 +1867,8 @@ app.get("/api/shirt-blanks", async (req, res) => {
         SELECT
           shirt_blank_id,
           size_label,
-          extra_cost_cents
+          extra_cost_cents,
+          available
         FROM shirt_blank_size_costs
         ORDER BY size_label ASC
       `
@@ -1784,10 +1878,11 @@ app.get("/api/shirt-blanks", async (req, res) => {
       const blankId = Number(row.shirt_blank_id);
 
       if (!acc[blankId]) {
-        acc[blankId] = {};
+        acc[blankId] = { costs: {}, availability: {} };
       }
 
-      acc[blankId][row.size_label] = normalizeMoneyCents(row.extra_cost_cents);
+      acc[blankId].costs[row.size_label] = normalizeMoneyCents(row.extra_cost_cents);
+      acc[blankId].availability[row.size_label] = normalizeActive(row.available);
       return acc;
     }, {});
 
@@ -1799,7 +1894,8 @@ app.get("/api/shirt-blanks", async (req, res) => {
         name: blank.name,
         description: blank.description,
         base_cost_cents: normalizeMoneyCents(blank.base_cost_cents),
-        size_costs: sizeCostsByBlank[blank.id] || {},
+        size_costs: sizeCostsByBlank[blank.id]?.costs || {},
+        size_availability: sizeCostsByBlank[blank.id]?.availability || {},
       }))
     );
   } catch (err) {
@@ -1856,10 +1952,11 @@ app.get("/api/pricing/shirt-blanks", async (req, res) => {
       const blankId = Number(row.shirt_blank_id);
 
       if (!acc[blankId]) {
-        acc[blankId] = {};
+        acc[blankId] = { costs: {}, availability: {} };
       }
 
-      acc[blankId][row.size_label] = normalizeMoneyCents(row.extra_cost_cents);
+      acc[blankId].costs[row.size_label] = normalizeMoneyCents(row.extra_cost_cents);
+      acc[blankId].availability[row.size_label] = normalizeActive(row.available);
       return acc;
     }, {});
 
@@ -1867,7 +1964,8 @@ app.get("/api/pricing/shirt-blanks", async (req, res) => {
       blanks.map((blank) => ({
         ...blank,
         base_cost_cents: normalizeMoneyCents(blank.base_cost_cents),
-        size_costs: sizeCostsByBlank[blank.id] || {},
+        size_costs: sizeCostsByBlank[blank.id]?.costs || {},
+        size_availability: sizeCostsByBlank[blank.id]?.availability || {},
       }))
     );
   } catch (err) {
@@ -1884,6 +1982,7 @@ app.post("/api/pricing/shirt-blanks", async (req, res) => {
   const baseCostCents = normalizeMoneyCents(req.body?.base_cost_cents);
   const active = normalizeActive(req.body?.active);
   const sizeCosts = req.body?.size_costs || {};
+  const sizeAvailability = req.body?.size_availability || {};
 
   if (!brand || !styleNumber || !name) {
     return res.status(400).json({ error: "Brand, style number, and name are required" });
@@ -1920,11 +2019,17 @@ app.post("/api/pricing/shirt-blanks", async (req, res) => {
             INSERT INTO shirt_blank_size_costs (
               shirt_blank_id,
               size_label,
-              extra_cost_cents
+              extra_cost_cents,
+              available
             )
-            VALUES (?, ?, ?)
+            VALUES (?, ?, ?, ?)
           `,
-          [result.lastID, sizeLabel, normalizeMoneyCents(extraCost)]
+          [
+            result.lastID,
+            sizeLabel,
+            normalizeMoneyCents(extraCost),
+            normalizeActive(sizeAvailability[sizeLabel]),
+          ]
         );
       }
 
@@ -1953,6 +2058,7 @@ app.patch("/api/pricing/shirt-blanks/:id", async (req, res) => {
   const baseCostCents = normalizeMoneyCents(req.body?.base_cost_cents);
   const active = normalizeActive(req.body?.active);
   const sizeCosts = req.body?.size_costs || {};
+  const sizeAvailability = req.body?.size_availability || {};
 
   if (!Number.isInteger(blankId) || blankId < 1) {
     return res.status(400).json({ error: "Valid shirt blank id is required" });
@@ -1997,24 +2103,36 @@ app.patch("/api/pricing/shirt-blanks/:id", async (req, res) => {
           `
             UPDATE shirt_blank_size_costs
             SET extra_cost_cents = ?,
+                available = ?,
                 updated_at = CURRENT_TIMESTAMP
             WHERE shirt_blank_id = ?
               AND size_label = ?
           `,
-          [normalizeMoneyCents(extraCost), blankId, sizeLabel]
+          [
+            normalizeMoneyCents(extraCost),
+            normalizeActive(sizeAvailability[sizeLabel]),
+            blankId,
+            sizeLabel,
+          ]
         );
 
         if (updateResult.changes === 0) {
           await dbRun(
             `
               INSERT INTO shirt_blank_size_costs (
-                shirt_blank_id,
-                size_label,
-                extra_cost_cents
-              )
-              VALUES (?, ?, ?)
-            `,
-            [blankId, sizeLabel, normalizeMoneyCents(extraCost)]
+              shirt_blank_id,
+              size_label,
+              extra_cost_cents,
+              available
+            )
+            VALUES (?, ?, ?, ?)
+          `,
+            [
+              blankId,
+              sizeLabel,
+              normalizeMoneyCents(extraCost),
+              normalizeActive(sizeAvailability[sizeLabel]),
+            ]
           );
         }
       }

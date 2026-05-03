@@ -39,7 +39,9 @@ Sell-price behavior:
 
 - `print_price_per_shirt_cents` is the final customer sell price per shirt.
 - `total_price_cents` equals `price_per_shirt_cents * total_quantity`, plus
-  any size upcharges from `shirt_blank_size_costs.extra_cost_cents`.
+  any size upcharges derived from `shirt_blank_size_costs.extra_cost_cents`.
+  That column stores the actual blank cost for the size, not the customer
+  upcharge.
 - Blank cost and print cost stay internal-only cost tracking fields.
 - Customer sale price tiers are based on the configured base pricing blank,
   default `Port and Co PC43`. If the selected blank costs more than that PC43,
@@ -49,16 +51,15 @@ Sell-price behavior:
 - Multiple base placements add internal print/setup cost, but do not multiply
   the customer sell price. If selected base placements have different sell
   prices, the highest matching per-shirt sell price is used once for the order.
-- A quote with a $12.00 base tier, PC43 at $3.00, and selected blank at $4.25
-  should return `blankUpgradePerShirtCents = 125` and
-  `price_per_shirt_cents = 1325` before sleeve.
-- A 10-shirt quote at $12.00 each with two 2XL shirts and a $2.00 2XL upcharge
-  should total $124.00: `(1200 * 10) + (200 * 2)`.
-- Size upcharges are per shirt for that size. A 2-shirt quote where both shirts
-  are 2XL and the 2XL upcharge is 228 cents should return
-  `size_upcharge_total_cents = 456`.
-- The seeded size upcharges are per-shirt values: 2XL is 228 cents, 3XL is 300
-  cents, and 4XL is 400 cents.
+- A quote with a $12.00 base tier, PC43 at $2.04, and selected blank at $4.25
+  should return `blankUpgradePerShirtCents = 221` and
+  `price_per_shirt_cents = 1421` before sleeve.
+- Size upcharges are calculated from actual blank costs by size. If PC43 base
+  cost is 204 cents and PC43 2XL actual cost is 318 cents, the 2XL customer
+  upcharge is 114 cents per shirt. Two 2XL shirts should return
+  `size_upcharge_total_cents = 228` and internal blank cost of 636 cents.
+- The seeded PC43 actual size costs are per-shirt values: S-XL are 204 cents,
+  2XL is 318 cents, and 3XL through 6XL are 419 cents.
 - Sleeve is treated as an add-on. When sleeve is selected, it does not drive the
   base sale-price tier. It adds `sleeve_add_on_price_cents * total_quantity` to
   the customer total through `price_per_shirt_cents` and
