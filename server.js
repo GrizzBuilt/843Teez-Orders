@@ -1529,10 +1529,7 @@ async function calculateQuote(input) {
     };
   });
   const sizeUpchargeTotalCents = calculatedSizes.reduce(
-    (sum, size) =>
-      sum +
-      normalizeSizeUpchargeCents(size.blank_extra_cost_cents) *
-        Math.floor(Number(size.quantity) || 0),
+    (sum, size) => sum + size.blank_extra_cost_cents * size.quantity,
     0
   );
 
@@ -1657,6 +1654,14 @@ async function calculateQuote(input) {
     pricePerShirtCents * totalQuantity + sizeUpchargeTotalCents;
   const profitCents =
     totalPriceCents - blankCostCents - printCostCents - setupFeeCents;
+  console.log("SIZE DEBUG", {
+    sizes,
+    calculatedSizes,
+    sizeUpchargeTotalCents,
+    totalQuantity,
+    pricePerShirtCents,
+    totalPriceCents,
+  });
   const pricingDebug = {
     totalQuantity,
     basePricePerShirtCents,
