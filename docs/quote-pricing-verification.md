@@ -57,6 +57,8 @@ Sell-price behavior:
 - Size upcharges are per shirt for that size. A 2-shirt quote where both shirts
   are 2XL and the 2XL upcharge is 228 cents should return
   `size_upcharge_total_cents = 456`.
+- The seeded size upcharges are per-shirt values: 2XL is 228 cents, 3XL is 300
+  cents, and 4XL is 400 cents.
 - Sleeve is treated as an add-on. When sleeve is selected, it does not drive the
   base sale-price tier. It adds `sleeve_add_on_price_cents * total_quantity` to
   the customer total through `price_per_shirt_cents` and

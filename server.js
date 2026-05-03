@@ -543,11 +543,13 @@ db.serialize(() => {
     }
   );
 
-  [
-    ["2XL", 200],
+  const defaultSizeUpcharges = [
+    ["2XL", 228],
     ["3XL", 300],
     ["4XL", 400],
-  ].forEach(([sizeLabel, extraCostCents]) => {
+  ];
+
+  defaultSizeUpcharges.forEach(([sizeLabel, extraCostCents]) => {
     db.run(
       `
         INSERT OR IGNORE INTO shirt_blank_size_costs (
@@ -566,6 +568,21 @@ db.serialize(() => {
       }
     );
   });
+
+  db.run(
+    `
+      UPDATE shirt_blank_size_costs
+      SET extra_cost_cents = 228,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE size_label = '2XL'
+        AND extra_cost_cents = 114
+    `,
+    (err) => {
+      if (err) {
+        console.error("Error correcting 2XL size upcharge:", err.message);
+      }
+    }
+  );
 
   [
     ["Screen Print", "left_chest", 12, 999999, 2500, 75, 250],
