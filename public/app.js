@@ -963,16 +963,10 @@ function createJobCard(job) {
 
   const agingLevel = getAgingLevel(job);
   const ageLabel = getAgeLabel(job);
-  const stuckLevel = getStuckLevel(job);
-  const stuckLabel = getStuckLabel(job);
   const dueStatus = getDueDateStatus(job);
 
   if (agingLevel) {
     article.classList.add(agingLevel);
-  }
-
-  if (stuckLevel) {
-    article.classList.add(stuckLevel);
   }
 
   if (dueStatus?.className) {
@@ -1017,11 +1011,6 @@ if (job.status === "at_the_plate") {
         ${
           dueStatus
             ? `<span class="due-badge ${escapeHtml(dueStatus.className)}">${escapeHtml(dueStatus.label)}</span>`
-            : ""
-        }
-        ${
-          stuckLabel
-            ? `<span class="stuck-badge">${escapeHtml(stuckLabel)}</span>`
             : ""
         }
       </div>

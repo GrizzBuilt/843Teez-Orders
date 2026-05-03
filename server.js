@@ -1779,13 +1779,14 @@ async function calculateQuote(input) {
     blankUpgradePerShirtCents +
     sleeveAddOnPerShirtCents;
   const pricingLabel = buildPricingLabel(selectedPriceRule, totalQuantity);
-  const baseDealSubtotalCents = basePricePerShirtCents * totalQuantity;
+  const baseSubtotalCents = basePricePerShirtCents * totalQuantity;
+  const baseDealSubtotalCents = baseSubtotalCents;
   const blankUpgradeTotalCents = blankUpgradePerShirtCents * totalQuantity;
   const totalPriceCents =
-    baseDealSubtotalCents +
-    sleeveAddOnTotalCents +
+    baseSubtotalCents +
     blankUpgradeTotalCents +
-    sizeUpchargeTotalCents;
+    sizeUpchargeTotalCents +
+    sleeveAddOnTotalCents;
   const profitCents =
     totalPriceCents - blankCostCents - printCostCents - setupFeeCents;
   console.log("SIZE DEBUG", {
@@ -1796,7 +1797,7 @@ async function calculateQuote(input) {
     sleeveAddOnPerShirtCents,
     sleeveAddOnTotalCents,
     totalQuantity,
-    baseSubtotalCents: baseDealSubtotalCents,
+    baseSubtotalCents,
     pricePerShirtCents,
     totalPriceCents,
   });
@@ -1813,7 +1814,7 @@ async function calculateQuote(input) {
     sleeveAddOnPerShirtCents,
     sleeveAddOnPricePerShirtCents: sleeveAddOnPerShirtCents,
     pricingLabel,
-    baseSubtotalCents: baseDealSubtotalCents,
+    baseSubtotalCents,
     baseDealSubtotalCents,
     blankUpgradeTotalCents,
     sleeveAddOnTotalCents,
