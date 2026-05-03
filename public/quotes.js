@@ -222,15 +222,22 @@ function invalidateCalculation() {
   }
 }
 
-function getPresetPlacements() {
-  const selectedCard = printPresetCards.find(
-    (card) => card.dataset.preset === selectedPrintPreset
-  );
-
-  return String(selectedCard?.dataset.placements || "")
+function getPlacementsFromPresetCard(card) {
+  return String(card?.dataset.placements || "")
     .split(",")
     .map((placement) => placement.trim())
     .filter(Boolean);
+}
+
+function getActivePresetCard() {
+  return (
+    printPresetCards.find((card) => card.classList.contains("is-selected")) ||
+    printPresetCards.find((card) => card.dataset.preset === selectedPrintPreset)
+  );
+}
+
+function getPresetPlacements() {
+  return getPlacementsFromPresetCard(getActivePresetCard());
 }
 
 function setCustomPlacementValues(placements) {
@@ -281,8 +288,11 @@ function getPresetForPlacements(placements) {
 }
 
 function getSelectedPlacements() {
-  if (selectedPrintPreset !== "custom") {
-    return getPresetPlacements();
+  const activePresetCard = getActivePresetCard();
+  const activePreset = activePresetCard?.dataset.preset || selectedPrintPreset;
+
+  if (activePreset !== "custom") {
+    return getPlacementsFromPresetCard(activePresetCard);
   }
 
   return Array.from(
@@ -294,7 +304,7 @@ function getQuotePayload() {
   const formData = new FormData(quoteForm);
   const printType = String(formData.get("print_type") || "DTF").trim() || "DTF";
 
-  return {
+  const payload = {
     customer_name: String(formData.get("customer_name") || "").trim(),
     customer_email: String(formData.get("customer_email") || "").trim(),
     customer_phone: String(formData.get("customer_phone") || "").trim(),
@@ -308,6 +318,9 @@ function getQuotePayload() {
       sizes: getSizeQuantities(),
     },
   };
+
+  console.log("QUOTE PAYLOAD", payload);
+  return payload;
 }
 
 function getMissingQuoteInputMessage() {
