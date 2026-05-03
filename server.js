@@ -1233,6 +1233,8 @@ const QUOTE_PLACEMENTS = {
   sleeve: "Sleeve",
 };
 
+const SLEEVE_ADD_ON_PRICE_CENTS = 300;
+
 function normalizeQuoteListStatus(value) {
   const allowedStatuses = new Set([
     "active",
@@ -1643,7 +1645,7 @@ async function calculateQuote(input) {
   let printCostCents = 0;
   let setupFeeCents = 0;
   let basePricePerShirtCents = 0;
-  let sleeveAddOnPricePerShirtCents = 0;
+  const sleeveAddOnPerShirtCents = hasSleeve ? SLEEVE_ADD_ON_PRICE_CENTS : 0;
   let selectedPriceRuleId = null;
   let selectedPriceRule = null;
   const calculatedPlacements = [];
@@ -1699,7 +1701,6 @@ async function calculateQuote(input) {
       const sleeveAddOnCostCents = ruleSleeveAddOnCostCents * totalQuantity;
 
       printCostCents += sleeveAddOnCostCents;
-      sleeveAddOnPricePerShirtCents = ruleSleeveAddOnPriceCents;
 
       calculatedPlacements.push({
         placement,
@@ -1745,20 +1746,19 @@ async function calculateQuote(input) {
     placement.selected_price_rule = placement.rule_id === selectedPriceRuleId;
   });
 
-  if (!hasSleeve) {
-    sleeveAddOnPricePerShirtCents = 0;
-  }
-
   const pricePerShirtCents =
     basePricePerShirtCents +
     blankUpgradePerShirtCents +
-    sleeveAddOnPricePerShirtCents;
+    sleeveAddOnPerShirtCents;
   const pricingLabel = buildPricingLabel(selectedPriceRule, totalQuantity);
   const baseDealSubtotalCents = basePricePerShirtCents * totalQuantity;
   const blankUpgradeTotalCents = blankUpgradePerShirtCents * totalQuantity;
-  const sleeveAddOnTotalCents = sleeveAddOnPricePerShirtCents * totalQuantity;
+  const sleeveAddOnTotalCents = sleeveAddOnPerShirtCents * totalQuantity;
   const totalPriceCents =
-    pricePerShirtCents * totalQuantity + sizeUpchargeTotalCents;
+    baseDealSubtotalCents +
+    sleeveAddOnTotalCents +
+    blankUpgradeTotalCents +
+    sizeUpchargeTotalCents;
   const profitCents =
     totalPriceCents - blankCostCents - printCostCents - setupFeeCents;
   console.log("SIZE DEBUG", {
@@ -1780,8 +1780,8 @@ async function calculateQuote(input) {
     selectedBlankBaseCostCents,
     rawBlankUpgradePerShirtCents,
     blankUpgradePerShirtCents,
-    sleeveAddOnPerShirtCents: sleeveAddOnPricePerShirtCents,
-    sleeveAddOnPricePerShirtCents,
+    sleeveAddOnPerShirtCents,
+    sleeveAddOnPricePerShirtCents: sleeveAddOnPerShirtCents,
     pricingLabel,
     baseDealSubtotalCents,
     blankUpgradeTotalCents,
