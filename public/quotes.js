@@ -19,11 +19,23 @@ const quoteStatusFilter = document.getElementById("quote-status-filter");
 const calculateQuoteBtn = document.getElementById("calculate-quote-btn");
 const saveQuoteBtn = document.getElementById("save-quote-btn");
 const cancelEditQuoteBtn = document.getElementById("cancel-edit-quote-btn");
+const saveQuotePanel = document.getElementById("save-quote-panel");
+const closeSavePanelBtn = document.getElementById("close-save-panel-btn");
+const confirmSaveQuoteBtn = document.getElementById("confirm-save-quote-btn");
+const mobileQuoteBar = document.getElementById("mobile-quote-bar");
+const mobileQuoteTotal = document.getElementById("mobile-quote-total");
+const mobileQuoteEach = document.getElementById("mobile-quote-each");
+const mobileCalculateQuoteBtn = document.getElementById("mobile-calculate-quote-btn");
+const mobileSaveQuoteBtn = document.getElementById("mobile-save-quote-btn");
+const customPlacementOptions = document.querySelector(".custom-placement-options");
+const printPresetCards = Array.from(document.querySelectorAll(".print-preset-card"));
 
 let isSavingQuote = false;
 let isCalculatingQuote = false;
 let quoteSearchTimer = null;
 let editingQuoteId = null;
+let selectedPrintPreset = "full_front";
+let lastCalculation = null;
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -167,9 +179,82 @@ function updateQuantityTotal() {
 
   const total = getTotalQuantity();
   quantityTotal.textContent = `${total} total`;
+  invalidateCalculation();
+}
+
+function invalidateCalculation() {
+  const hadCalculation = Boolean(lastCalculation);
+  lastCalculation = null;
+  updateMobileQuoteBar();
+
+  if (hadCalculation && quoteSummaryContent) {
+    quoteSummaryContent.innerHTML = `<p class="quote-muted">Pricing changed. Calculate again to refresh the quote.</p>`;
+  }
+}
+
+function getPresetPlacements() {
+  const selectedCard = printPresetCards.find(
+    (card) => card.dataset.preset === selectedPrintPreset
+  );
+
+  return String(selectedCard?.dataset.placements || "")
+    .split(",")
+    .map((placement) => placement.trim())
+    .filter(Boolean);
+}
+
+function setCustomPlacementValues(placements) {
+  document.querySelectorAll('input[name="placements"]').forEach((input) => {
+    input.checked = placements.includes(input.value);
+  });
+}
+
+function syncPrintPresetUi() {
+  printPresetCards.forEach((card) => {
+    const isSelected = card.dataset.preset === selectedPrintPreset;
+    card.classList.toggle("is-selected", isSelected);
+    card.setAttribute("aria-pressed", isSelected ? "true" : "false");
+  });
+
+  if (customPlacementOptions) {
+    customPlacementOptions.hidden = selectedPrintPreset !== "custom";
+  }
+}
+
+function setPrintPreset(preset, placements = []) {
+  selectedPrintPreset = preset || "full_front";
+
+  if (selectedPrintPreset === "custom") {
+    setCustomPlacementValues(placements);
+  } else {
+    setCustomPlacementValues(getPresetPlacements());
+  }
+
+  syncPrintPresetUi();
+  invalidateCalculation();
+}
+
+function getPresetForPlacements(placements) {
+  const normalizedPlacements = [...placements].sort().join(",");
+  const matchedCard = printPresetCards.find((card) => {
+    const cardPlacements = String(card.dataset.placements || "")
+      .split(",")
+      .map((placement) => placement.trim())
+      .filter(Boolean)
+      .sort()
+      .join(",");
+
+    return cardPlacements && cardPlacements === normalizedPlacements;
+  });
+
+  return matchedCard?.dataset.preset || "custom";
 }
 
 function getSelectedPlacements() {
+  if (selectedPrintPreset !== "custom") {
+    return getPresetPlacements();
+  }
+
   return Array.from(
     document.querySelectorAll('input[name="placements"]:checked')
   ).map((input) => input.value);
@@ -199,6 +284,8 @@ function renderCalculation(calculation) {
   const item = calculation?.item;
 
   if (!quoteSummaryContent || !totals || !item) return;
+
+  lastCalculation = calculation;
 
   const placementLabels = (item.placement_breakdown || [])
     .map((placement) => placement.label)
@@ -270,12 +357,51 @@ function renderCalculation(calculation) {
       "quote-grand-total"
     )}
   `;
+
+  updateMobileQuoteBar();
+}
+
+function updateMobileQuoteBar() {
+  const totals = lastCalculation?.totals;
+  const hasCalculation = Boolean(totals);
+
+  if (!mobileQuoteBar || !mobileQuoteTotal || !mobileQuoteEach) return;
+
+  mobileQuoteBar.hidden = !hasCalculation;
+  mobileQuoteBar.classList.toggle("has-calculation", hasCalculation);
+  mobileQuoteTotal.textContent = hasCalculation
+    ? `Quote: ${formatMoney(totals.total_price_cents)}`
+    : "Quote: Not calculated";
+  mobileQuoteEach.textContent = hasCalculation
+    ? `${formatMoney(totals.price_per_shirt_cents)} each`
+    : "Tap Calculate";
+}
+
+function openSavePanel() {
+  if (!saveQuotePanel) return;
+
+  saveQuotePanel.hidden = false;
+  saveQuotePanel
+    .querySelector("#customer_name")
+    ?.focus({ preventScroll: true });
+  saveQuotePanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function closeSavePanel() {
+  if (!saveQuotePanel) return;
+
+  saveQuotePanel.hidden = true;
 }
 
 function setBusyState() {
   if (calculateQuoteBtn) {
     calculateQuoteBtn.disabled = isCalculatingQuote || isSavingQuote;
     calculateQuoteBtn.textContent = isCalculatingQuote ? "Calculating..." : "Calculate";
+  }
+
+  if (mobileCalculateQuoteBtn) {
+    mobileCalculateQuoteBtn.disabled = isCalculatingQuote || isSavingQuote;
+    mobileCalculateQuoteBtn.textContent = isCalculatingQuote ? "..." : "Calculate";
   }
 
   if (cancelEditQuoteBtn) {
@@ -286,6 +412,20 @@ function setBusyState() {
   if (saveQuoteBtn) {
     saveQuoteBtn.disabled = isCalculatingQuote || isSavingQuote;
     saveQuoteBtn.textContent = isSavingQuote
+      ? "Saving..."
+      : editingQuoteId
+        ? "Update Draft"
+        : "Save Draft";
+  }
+
+  if (mobileSaveQuoteBtn) {
+    mobileSaveQuoteBtn.disabled = isCalculatingQuote || isSavingQuote;
+    mobileSaveQuoteBtn.textContent = editingQuoteId ? "Update" : "Save";
+  }
+
+  if (confirmSaveQuoteBtn) {
+    confirmSaveQuoteBtn.disabled = isCalculatingQuote || isSavingQuote;
+    confirmSaveQuoteBtn.textContent = isSavingQuote
       ? "Saving..."
       : editingQuoteId
         ? "Update Draft"
@@ -340,6 +480,14 @@ async function calculateQuote() {
 
 async function saveQuote() {
   clearQuoteError();
+  const customerName = String(quoteForm?.elements?.customer_name?.value || "").trim();
+
+  if (!customerName) {
+    openSavePanel();
+    showQuoteError("Customer name is required to save a quote.");
+    return;
+  }
+
   isSavingQuote = true;
   setBusyState();
 
@@ -361,6 +509,8 @@ async function saveQuote() {
     const savedId = saved.id;
     resetQuoteForm();
     quoteSummaryContent.innerHTML = `<p class="quote-muted">Saved draft quote #${escapeHtml(savedId)}.</p>`;
+    lastCalculation = null;
+    updateMobileQuoteBar();
     await loadQuotes();
     await loadQuoteDetail(savedId);
   } catch (error) {
@@ -382,7 +532,11 @@ function setFormValue(name, value) {
 function resetQuoteForm() {
   editingQuoteId = null;
   quoteForm?.reset();
+  setPrintPreset("full_front");
   renderSizeInputs();
+  closeSavePanel();
+  lastCalculation = null;
+  updateMobileQuoteBar();
   clearQuoteError();
   setBusyState();
 }
@@ -430,9 +584,8 @@ async function editQuoteDraft(quoteId) {
     setFormValue("color", item.color);
     setFormValue("print_type", item.print_type);
 
-    document.querySelectorAll('input[name="placements"]').forEach((input) => {
-      input.checked = (item.placements || []).includes(input.value);
-    });
+    const placements = item.placements || [];
+    setPrintPreset(getPresetForPlacements(placements), placements);
 
     renderSizeInputs();
 
@@ -448,6 +601,9 @@ async function editQuoteDraft(quoteId) {
 
     updateQuantityTotal();
     quoteSummaryContent.innerHTML = `<p class="quote-muted">Editing draft quote #${escapeHtml(quote.id)}.</p>`;
+    lastCalculation = null;
+    openSavePanel();
+    updateMobileQuoteBar();
     setBusyState();
     quoteForm?.scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (error) {
@@ -770,6 +926,60 @@ calculateQuoteBtn?.addEventListener("click", async () => {
   }
 });
 
+mobileCalculateQuoteBtn?.addEventListener("click", async () => {
+  try {
+    await calculateQuote();
+  } catch {
+    // Error is shown inline.
+  }
+});
+
+saveQuoteBtn?.addEventListener("click", () => {
+  clearQuoteError();
+  openSavePanel();
+});
+
+mobileSaveQuoteBtn?.addEventListener("click", () => {
+  clearQuoteError();
+  openSavePanel();
+});
+
+closeSavePanelBtn?.addEventListener("click", () => {
+  closeSavePanel();
+});
+
+printPresetCards.forEach((card) => {
+  card.addEventListener("click", () => {
+    const currentPlacements = getSelectedPlacements();
+    setPrintPreset(
+      card.dataset.preset,
+      card.dataset.preset === "custom" ? currentPlacements : []
+    );
+  });
+});
+
+quoteForm?.addEventListener("input", (event) => {
+  const target = event.target;
+  const pricingFieldNames = new Set([
+    "shirt_blank_id",
+    "color",
+    "print_type",
+    "placements",
+  ]);
+
+  if (pricingFieldNames.has(target?.name) || target?.dataset?.size) {
+    invalidateCalculation();
+  }
+});
+
+quoteForm?.addEventListener("change", (event) => {
+  const target = event.target;
+
+  if (target?.name === "shirt_blank_id" || target?.name === "placements") {
+    invalidateCalculation();
+  }
+});
+
 quoteForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   await saveQuote();
@@ -787,7 +997,9 @@ quoteSearch?.addEventListener("input", () => {
 
 quoteStatusFilter?.addEventListener("change", loadQuotes);
 
+setPrintPreset("full_front");
 renderSizeInputs();
+updateMobileQuoteBar();
 setBusyState();
 loadBlanks().catch((error) => showQuoteError(error.message));
 loadQuotes();

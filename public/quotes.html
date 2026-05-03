@@ -41,53 +41,11 @@
     <main class="quote-layout">
       <section class="quote-panel">
         <div class="quote-panel-header">
-          <h2>Draft Quote</h2>
-          <p>Enter customer, blank, print setup, and sizes.</p>
+          <h2>Quick Quote</h2>
+          <p>Build the price first. Add customer details only when saving.</p>
         </div>
 
         <form id="quote-form" class="quote-form" novalidate>
-          <div class="quote-section">
-            <h3>Customer</h3>
-
-            <div class="quote-grid">
-              <label class="quote-field">
-                <span>Name</span>
-                <input
-                  type="text"
-                  id="customer_name"
-                  name="customer_name"
-                  autocomplete="name"
-                  required
-                />
-              </label>
-
-              <label class="quote-field">
-                <span>Email</span>
-                <input
-                  type="email"
-                  id="customer_email"
-                  name="customer_email"
-                  autocomplete="email"
-                />
-              </label>
-
-              <label class="quote-field">
-                <span>Phone</span>
-                <input
-                  type="tel"
-                  id="customer_phone"
-                  name="customer_phone"
-                  autocomplete="tel"
-                />
-              </label>
-
-              <label class="quote-field">
-                <span>Due Date</span>
-                <input type="date" id="due_date" name="due_date" />
-              </label>
-            </div>
-          </div>
-
           <div class="quote-section">
             <h3>Blank</h3>
 
@@ -112,20 +70,60 @@
           </div>
 
           <div class="quote-section">
-            <h3>Print</h3>
+            <h3>Print Setup</h3>
+            <input type="hidden" id="print_type" name="print_type" value="DTF" />
 
-            <div class="quote-grid">
-              <label class="quote-field">
-                <span>Print Type</span>
-                <select id="print_type" name="print_type" required>
-                  <option value="">Select one</option>
-                  <option value="DTF">DTF</option>
-                  <option value="Screen Print">Screen Print</option>
-                </select>
-              </label>
+            <div class="print-preset-grid" aria-label="Print setup presets">
+              <button
+                type="button"
+                class="print-preset-card"
+                data-preset="full_front"
+                data-placements="full_front"
+              >
+                <strong>Full Front</strong>
+              </button>
+              <button
+                type="button"
+                class="print-preset-card"
+                data-preset="full_back"
+                data-placements="full_back"
+              >
+                <strong>Full Back</strong>
+              </button>
+              <button
+                type="button"
+                class="print-preset-card"
+                data-preset="left_chest_full_back"
+                data-placements="left_chest,full_back"
+              >
+                <strong>Left Chest + Full Back</strong>
+              </button>
+              <button
+                type="button"
+                class="print-preset-card"
+                data-preset="full_front_full_back"
+                data-placements="full_front,full_back"
+              >
+                <strong>Full Front + Full Back</strong>
+              </button>
+              <button
+                type="button"
+                class="print-preset-card"
+                data-preset="full_front_full_back_sleeve"
+                data-placements="full_front,full_back,sleeve"
+              >
+                <strong>Full Front + Full Back + Sleeve</strong>
+              </button>
+              <button
+                type="button"
+                class="print-preset-card"
+                data-preset="custom"
+              >
+                <strong>Custom</strong>
+              </button>
             </div>
 
-            <div class="quote-checkboxes" aria-label="Print placements">
+            <div class="quote-checkboxes custom-placement-options" aria-label="Custom print placements" hidden>
               <label>
                 <input type="checkbox" name="placements" value="left_chest" />
                 <span>Left Chest</span>
@@ -154,20 +152,6 @@
             <div class="size-grid" id="size-grid"></div>
           </div>
 
-          <div class="quote-section">
-            <h3>Notes</h3>
-
-            <label class="quote-field">
-              <span class="sr-only">Notes</span>
-              <textarea
-                id="notes"
-                name="notes"
-                rows="4"
-                placeholder="Artwork notes, deadline details, customer preferences..."
-              ></textarea>
-            </label>
-          </div>
-
           <div id="quote-error" class="quote-error" role="alert" hidden></div>
 
           <div class="quote-actions">
@@ -177,9 +161,81 @@
             <button type="button" class="secondary-btn" id="cancel-edit-quote-btn" hidden>
               Cancel Edit
             </button>
-            <button type="submit" class="add-btn" id="save-quote-btn">
+            <button type="button" class="add-btn" id="save-quote-btn">
               Save Draft
             </button>
+          </div>
+
+          <div
+            class="save-quote-panel"
+            id="save-quote-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="save-quote-title"
+            hidden
+          >
+            <div class="save-quote-panel-card">
+              <div class="quote-panel-header">
+                <h2 id="save-quote-title">Save Quote</h2>
+                <p>Add customer details to save this price as a draft.</p>
+              </div>
+
+              <div class="quote-grid">
+                <label class="quote-field quote-field-wide">
+                  <span>Customer Name</span>
+                  <input
+                    type="text"
+                    id="customer_name"
+                    name="customer_name"
+                    autocomplete="name"
+                  />
+                </label>
+
+                <label class="quote-field">
+                  <span>Email</span>
+                  <input
+                    type="email"
+                    id="customer_email"
+                    name="customer_email"
+                    autocomplete="email"
+                  />
+                </label>
+
+                <label class="quote-field">
+                  <span>Phone</span>
+                  <input
+                    type="tel"
+                    id="customer_phone"
+                    name="customer_phone"
+                    autocomplete="tel"
+                  />
+                </label>
+
+                <label class="quote-field">
+                  <span>Due Date</span>
+                  <input type="date" id="due_date" name="due_date" />
+                </label>
+
+                <label class="quote-field quote-field-wide">
+                  <span>Notes</span>
+                  <textarea
+                    id="notes"
+                    name="notes"
+                    rows="4"
+                    placeholder="Artwork notes, deadline details, customer preferences..."
+                  ></textarea>
+                </label>
+              </div>
+
+              <div class="quote-actions">
+                <button type="button" class="secondary-btn" id="close-save-panel-btn">
+                  Cancel
+                </button>
+                <button type="submit" class="add-btn" id="confirm-save-quote-btn">
+                  Save Draft
+                </button>
+              </div>
+            </div>
           </div>
         </form>
       </section>
@@ -196,52 +252,70 @@
           </div>
         </section>
 
-        <section class="quote-summary">
-          <div class="quote-panel-header">
-            <h2>Saved Quotes</h2>
-            <p>Saved quotes stay separate from production orders.</p>
-          </div>
-
-          <div class="quote-list-controls">
-            <label class="quote-field">
-              <span>Search</span>
-              <input
-                type="search"
-                id="quote-search"
-                placeholder="Customer, email, phone..."
-                autocomplete="off"
-              />
-            </label>
-
-            <label class="quote-field">
-              <span>Status</span>
-              <select id="quote-status-filter">
-                <option value="active">Active</option>
-                <option value="draft">Draft</option>
-                <option value="converted">Converted</option>
-                <option value="archived">Archived</option>
-                <option value="all">All</option>
-              </select>
-            </label>
-          </div>
-
-          <div id="quote-list" class="quote-list">
-            <p class="quote-muted">Loading drafts...</p>
-          </div>
-        </section>
-
-        <section class="quote-summary">
-          <div class="quote-panel-header">
-            <h2>Quote Detail</h2>
-            <p>Open a saved quote to review its pricing snapshot.</p>
-          </div>
-
-          <div id="quote-detail" class="quote-detail">
-            <p class="quote-muted">Select a quote to view details.</p>
-          </div>
-        </section>
       </aside>
     </main>
+
+    <section class="quote-history-layout">
+      <section class="quote-summary">
+        <div class="quote-panel-header">
+          <h2>Saved Quotes</h2>
+          <p>Saved quotes stay separate from production orders.</p>
+        </div>
+
+        <div class="quote-list-controls">
+          <label class="quote-field">
+            <span>Search</span>
+            <input
+              type="search"
+              id="quote-search"
+              placeholder="Customer, email, phone..."
+              autocomplete="off"
+            />
+          </label>
+
+          <label class="quote-field">
+            <span>Status</span>
+            <select id="quote-status-filter">
+              <option value="active">Active</option>
+              <option value="draft">Draft</option>
+              <option value="converted">Converted</option>
+              <option value="archived">Archived</option>
+              <option value="all">All</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="quote-list" class="quote-list">
+          <p class="quote-muted">Loading drafts...</p>
+        </div>
+      </section>
+
+      <section class="quote-summary">
+        <div class="quote-panel-header">
+          <h2>Quote Detail</h2>
+          <p>Open a saved quote to review its pricing snapshot.</p>
+        </div>
+
+        <div id="quote-detail" class="quote-detail">
+          <p class="quote-muted">Select a quote to view details.</p>
+        </div>
+      </section>
+    </section>
+
+    <div class="mobile-quote-bar" id="mobile-quote-bar" hidden>
+      <div class="mobile-quote-bar-total">
+        <strong id="mobile-quote-total">Quote: $0.00</strong>
+        <span id="mobile-quote-each">$0.00 each</span>
+      </div>
+      <div class="mobile-quote-bar-actions">
+        <button type="button" class="secondary-btn" id="mobile-calculate-quote-btn">
+          Calculate
+        </button>
+        <button type="button" class="add-btn" id="mobile-save-quote-btn">
+          Save
+        </button>
+      </div>
+    </div>
 
     <script src="/theme.js"></script>
     <script src="/quotes.js"></script>
