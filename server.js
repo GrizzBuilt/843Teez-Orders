@@ -1160,6 +1160,11 @@ function normalizeMoneyCents(value) {
   return Number.isFinite(cents) ? Math.max(0, Math.round(cents)) : 0;
 }
 
+function normalizeSizeUpchargeCents(value) {
+  const cents = Number(value);
+  return Number.isFinite(cents) ? Math.round(cents) : 0;
+}
+
 function normalizeActive(value) {
   return value === false || value === 0 || value === "0" ? 0 : 1;
 }
@@ -1500,11 +1505,13 @@ async function calculateQuote(input) {
   );
 
   const sizeCostMap = new Map(
-    sizeCosts.map((row) => [row.size_label, normalizeMoneyCents(row.extra_cost_cents)])
+    sizeCosts.map((row) => [
+      row.size_label,
+      normalizeSizeUpchargeCents(row.extra_cost_cents),
+    ])
   );
 
   let blankCostCents = 0;
-  let sizeUpchargeTotalCents = 0;
 
   const calculatedSizes = sizes.map((size) => {
     const blankExtraCostCents = sizeCostMap.get(size.size_label) || 0;
@@ -1513,7 +1520,6 @@ async function calculateQuote(input) {
       (selectedBlankBaseCostCents + blankExtraCostCents) * size.quantity;
 
     blankCostCents += lineCostCents;
-    sizeUpchargeTotalCents += lineSizeUpchargeCents;
 
     return {
       ...size,
@@ -1522,6 +1528,13 @@ async function calculateQuote(input) {
       size_upcharge_cents: lineSizeUpchargeCents,
     };
   });
+  const sizeUpchargeTotalCents = calculatedSizes.reduce(
+    (sum, size) =>
+      sum +
+      normalizeSizeUpchargeCents(size.blank_extra_cost_cents) *
+        Math.floor(Number(size.quantity) || 0),
+    0
+  );
 
   let printCostCents = 0;
   let setupFeeCents = 0;
