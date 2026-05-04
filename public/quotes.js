@@ -161,16 +161,32 @@ function renderSizeInputs() {
       return `
       <label class="size-field ${isAvailable ? "" : "size-field-unavailable"}">
         <span>${escapeHtml(size)}</span>
-        <input
-          type="number"
-          min="0"
-          step="1"
-          inputmode="numeric"
-          value="0"
-          data-size="${escapeHtml(size)}"
-          aria-label="${escapeHtml(size)} quantity"
-          ${isAvailable ? "" : "disabled"}
-        />
+        <div class="size-stepper">
+          <button
+            type="button"
+            class="size-step-btn"
+            data-size-step="-1"
+            aria-label="Decrease ${escapeHtml(size)} quantity"
+            ${isAvailable ? "" : "disabled"}
+          >-</button>
+          <input
+            type="number"
+            min="0"
+            step="1"
+            inputmode="numeric"
+            value="0"
+            data-size="${escapeHtml(size)}"
+            aria-label="${escapeHtml(size)} quantity"
+            ${isAvailable ? "" : "disabled"}
+          />
+          <button
+            type="button"
+            class="size-step-btn"
+            data-size-step="1"
+            aria-label="Increase ${escapeHtml(size)} quantity"
+            ${isAvailable ? "" : "disabled"}
+          >+</button>
+        </div>
         ${isAvailable ? "" : `<small>Unavailable</small>`}
       </label>
     `;
@@ -179,6 +195,24 @@ function renderSizeInputs() {
 
   sizeGrid.querySelectorAll("input[data-size]").forEach((input) => {
     input.addEventListener("input", updateQuantityTotal);
+  });
+
+  sizeGrid.querySelectorAll("[data-size-step]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const input = button
+        .closest(".size-field")
+        ?.querySelector("input[data-size]");
+
+      if (!input || input.disabled) return;
+
+      const nextValue = Math.max(
+        0,
+        Math.floor(Number(input.value) || 0) + Number(button.dataset.sizeStep)
+      );
+
+      input.value = String(nextValue);
+      updateQuantityTotal();
+    });
   });
 
   updateQuantityTotal();

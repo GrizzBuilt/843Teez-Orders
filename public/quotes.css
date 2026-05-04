@@ -275,7 +275,16 @@
   color: var(--text);
 }
 
+.size-stepper {
+  display: block;
+}
+
+.size-step-btn {
+  display: none;
+}
+
 .size-field input {
+  width: 100%;
   min-height: 46px;
 }
 
@@ -608,14 +617,60 @@ body.dark-mode .quote-status-pill {
   }
 
   .size-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: 1fr;
     gap: 0.5rem;
+  }
+
+  .size-field {
+    display: grid;
+    grid-template-columns: minmax(44px, 0.25fr) minmax(0, 1fr);
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  .size-field span {
+    font-size: 0.95rem;
+  }
+
+  .size-stepper {
+    display: grid;
+    grid-template-columns: 52px minmax(56px, 1fr) 52px;
+    gap: 0.5rem;
+  }
+
+  .size-step-btn {
+    display: inline-flex;
+    min-height: 52px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface-muted);
+    color: var(--text);
+    font: inherit;
+    font-size: 1.25rem;
+    font-weight: 900;
+    cursor: pointer;
+  }
+
+  .size-step-btn:focus-visible {
+    outline: none;
+    border-color: var(--brand-blue);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+  }
+
+  .size-step-btn:disabled {
+    cursor: not-allowed;
   }
 
   .size-field input {
     min-height: 52px;
     text-align: center;
     font-weight: 800;
+  }
+
+  .size-field small {
+    grid-column: 2;
   }
 
   .quote-total-row {
