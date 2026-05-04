@@ -41,15 +41,12 @@ const mobileQuoteTotal = document.getElementById("mobile-quote-total");
 const mobileQuoteEach = document.getElementById("mobile-quote-each");
 const mobileCalculateQuoteBtn = document.getElementById("mobile-calculate-quote-btn");
 const mobileSaveQuoteBtn = document.getElementById("mobile-save-quote-btn");
-const customPlacementOptions = document.querySelector(".custom-placement-options");
-const printPresetCards = Array.from(document.querySelectorAll(".print-preset-card"));
 const sleeveToggleCard = document.getElementById("sleeve-toggle-card");
 
 let isSavingQuote = false;
 let isCalculatingQuote = false;
 let quoteSearchTimer = null;
 let editingQuoteId = null;
-let selectedPrintPreset = "full_front";
 let lastCalculation = null;
 let quoteBlanks = [];
 let isSleeveSelected = false;
@@ -224,105 +221,19 @@ function invalidateCalculation() {
   }
 }
 
-function getPlacementsFromPresetCard(card) {
-  return String(card?.dataset.placements || "")
-    .split(",")
-    .map((placement) => placement.trim())
-    .filter(Boolean);
-}
-
-function getActivePresetCard() {
-  return (
-    printPresetCards.find((card) => card.classList.contains("is-selected")) ||
-    printPresetCards.find((card) => card.dataset.preset === selectedPrintPreset)
-  );
-}
-
-function getPresetPlacements() {
-  return getPlacementsFromPresetCard(getActivePresetCard());
-}
-
-function setCustomPlacementValues(placements) {
-  document.querySelectorAll('input[name="placements"]').forEach((input) => {
-    input.checked = input.value !== "sleeve" && placements.includes(input.value);
-  });
-}
-
-function syncPrintPresetUi() {
-  printPresetCards.forEach((card) => {
-    const isSelected = card.dataset.preset === selectedPrintPreset;
-    card.classList.toggle("is-selected", isSelected);
-    card.setAttribute("aria-pressed", isSelected ? "true" : "false");
-  });
-
-  if (customPlacementOptions) {
-    customPlacementOptions.hidden = selectedPrintPreset !== "custom";
-  }
-
+function syncSleeveToggleUi() {
   if (sleeveToggleCard) {
     sleeveToggleCard.classList.toggle("is-selected", isSleeveSelected);
     sleeveToggleCard.setAttribute("aria-pressed", isSleeveSelected ? "true" : "false");
   }
 }
 
-function setPrintPreset(preset, placements = []) {
-  selectedPrintPreset = preset || "full_front";
-  isSleeveSelected = placements.includes("sleeve") || isSleeveSelected;
-
-  if (selectedPrintPreset === "custom") {
-    setCustomPlacementValues(placements);
-  } else {
-    setCustomPlacementValues(getPresetPlacements());
-  }
-
-  syncPrintPresetUi();
-  invalidateCalculation();
-}
-
-function getPresetForPlacements(placements) {
-  const normalizedPlacements = placements
-    .filter((placement) => placement !== "sleeve")
-    .sort()
-    .join(",");
-  const matchedCard = printPresetCards.find((card) => {
-    const cardPlacements = String(card.dataset.placements || "")
-      .split(",")
-      .map((placement) => placement.trim())
-      .filter(Boolean)
-      .sort()
-      .join(",");
-
-    return cardPlacements && cardPlacements === normalizedPlacements;
-  });
-
-  return matchedCard?.dataset.preset || "custom";
-}
-
 function getSelectedPlacements() {
-  const activePresetCard = getActivePresetCard();
-  const activePreset = activePresetCard?.dataset.preset || selectedPrintPreset;
-  let placements = [];
-
-  if (activePreset !== "custom") {
-    placements = getPlacementsFromPresetCard(activePresetCard);
-  } else {
-    placements = Array.from(
-      document.querySelectorAll('input[name="placements"]:checked')
-    ).map((input) => input.value);
-  }
-
-  const basePlacements = placements.filter((placement) => placement !== "sleeve");
-
-  if (isSleeveSelected) {
-    basePlacements.push("sleeve");
-  }
-
-  return [...new Set(basePlacements)];
+  return isSleeveSelected ? ["full_front", "sleeve"] : ["full_front"];
 }
 
 function getQuotePayload() {
   const formData = new FormData(quoteForm);
-  const printType = String(formData.get("print_type") || "DTF").trim() || "DTF";
 
   const payload = {
     customer_name: String(formData.get("customer_name") || "").trim(),
@@ -333,7 +244,7 @@ function getQuotePayload() {
     item: {
       shirt_blank_id: Number(formData.get("shirt_blank_id") || 0),
       color: String(formData.get("color") || "").trim(),
-      print_type: printType,
+      print_type: "DTF",
       placements: getSelectedPlacements(),
       sizes: getSizeQuantities(),
     },
@@ -345,8 +256,6 @@ function getQuotePayload() {
 
 function getMissingQuoteInputMessage() {
   const payload = getQuotePayload();
-  const placements = payload.item.placements || [];
-  const hasBasePlacement = placements.some((placement) => placement !== "sleeve");
   const totalQuantity = Object.values(payload.item.sizes || {}).reduce(
     (sum, quantity) => sum + (Number(quantity) || 0),
     0
@@ -354,10 +263,6 @@ function getMissingQuoteInputMessage() {
 
   if (!payload.item.shirt_blank_id) {
     return "Choose a shirt blank before calculating.";
-  }
-
-  if (!hasBasePlacement) {
-    return "Choose a base print setup before calculating.";
   }
 
   if (totalQuantity < 1) {
@@ -375,9 +280,6 @@ function renderCalculation(calculation) {
 
   lastCalculation = calculation;
 
-  const placementLabels = (item.placement_breakdown || [])
-    .map((placement) => placement.label)
-    .join(", ");
   const pricingDebug = totals.pricing_debug || item.pricing_debug || {};
   const pricingLabel =
     totals.pricing_label ||
@@ -431,10 +333,6 @@ function renderCalculation(calculation) {
 
   quoteSummaryContent.innerHTML = `
     ${renderQuoteTotalRow("Blank", item.blank_label)}
-    ${renderQuoteTotalRow(
-      "Print",
-      `${item.print_type}${placementLabels ? ` - ${placementLabels}` : ""}`
-    )}
     ${renderQuoteTotalRow("Total Qty", totals.total_quantity)}
     ${dealRows}
     ${renderQuoteTotalRow("Per Shirt", formatMoney(totals.price_per_shirt_cents))}
@@ -634,7 +532,7 @@ function setFormValue(name, value) {
   const field = quoteForm?.elements?.[name];
 
   if (field) {
-    field.value = name === "print_type" ? value || "DTF" : value ?? "";
+    field.value = name === "print_type" ? "DTF" : value ?? "";
   }
 }
 
@@ -642,7 +540,7 @@ function resetQuoteForm() {
   editingQuoteId = null;
   quoteForm?.reset();
   isSleeveSelected = false;
-  setPrintPreset("full_front");
+  syncSleeveToggleUi();
   renderSizeInputs();
   closeSavePanel();
   lastCalculation = null;
@@ -700,7 +598,7 @@ async function editQuoteDraft(quoteId) {
 
     const placements = item.placements || [];
     isSleeveSelected = placements.includes("sleeve");
-    setPrintPreset(getPresetForPlacements(placements), placements);
+    syncSleeveToggleUi();
 
     renderSizeInputs();
 
@@ -1063,21 +961,9 @@ closeSavePanelBtn?.addEventListener("click", () => {
   closeSavePanel();
 });
 
-printPresetCards.forEach((card) => {
-  if (card === sleeveToggleCard) return;
-
-  card.addEventListener("click", () => {
-    const currentPlacements = getSelectedPlacements();
-    setPrintPreset(
-      card.dataset.preset,
-      card.dataset.preset === "custom" ? currentPlacements : []
-    );
-  });
-});
-
 sleeveToggleCard?.addEventListener("click", () => {
   isSleeveSelected = !isSleeveSelected;
-  syncPrintPresetUi();
+  syncSleeveToggleUi();
   invalidateCalculation();
 });
 
@@ -1087,7 +973,6 @@ quoteForm?.addEventListener("input", (event) => {
     "shirt_blank_id",
     "color",
     "print_type",
-    "placements",
   ]);
 
   if (pricingFieldNames.has(target?.name) || target?.dataset?.size) {
@@ -1098,7 +983,7 @@ quoteForm?.addEventListener("input", (event) => {
 quoteForm?.addEventListener("change", (event) => {
   const target = event.target;
 
-  if (target?.name === "shirt_blank_id" || target?.name === "placements") {
+  if (target?.name === "shirt_blank_id") {
     invalidateCalculation();
   }
 });
@@ -1135,7 +1020,7 @@ blankSelect?.addEventListener("change", () => {
   invalidateCalculation();
 });
 
-setPrintPreset("full_front");
+syncSleeveToggleUi();
 renderSizeInputs();
 updateMobileQuoteBar();
 setBusyState();
