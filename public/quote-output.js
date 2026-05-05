@@ -30,6 +30,16 @@ function formatMoney(cents) {
   }).format((Number(cents) || 0) / 100);
 }
 
+function getFinalAveragePerShirtCents(quote) {
+  const totalQuantity = Number(quote?.total_quantity) || 0;
+
+  if (totalQuantity < 1) {
+    return 0;
+  }
+
+  return Math.round((Number(quote?.total_price_cents) || 0) / totalQuantity);
+}
+
 function formatDate(value) {
   if (!value) return "Not set";
 
@@ -76,6 +86,7 @@ function getQuoteIdFromPath() {
 
 function renderQuote(quote) {
   const item = quote.items?.[0] || {};
+  const finalAveragePerShirtCents = getFinalAveragePerShirtCents(quote);
   const contactRows = [quote.customer_email, quote.customer_phone]
     .filter(Boolean)
     .map((value) => `<p>${escapeHtml(value)}</p>`)
@@ -135,7 +146,7 @@ function renderQuote(quote) {
                 <p>${escapeHtml(sizeSummary || "Sizes not set")}</p>
               </td>
               <td>${escapeHtml(quote.total_quantity)}</td>
-              <td>${formatMoney(quote.price_per_shirt_cents)}</td>
+              <td>${formatMoney(finalAveragePerShirtCents)}</td>
               <td>${formatMoney(quote.total_price_cents)}</td>
             </tr>
           </tbody>

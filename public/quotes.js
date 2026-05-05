@@ -67,6 +67,16 @@ function formatMoney(cents) {
   }).format((Number(cents) || 0) / 100);
 }
 
+function getFinalAveragePerShirtCents(source) {
+  const totalQuantity = Number(source?.total_quantity) || 0;
+
+  if (totalQuantity < 1) {
+    return 0;
+  }
+
+  return Math.round((Number(source?.total_price_cents) || 0) / totalQuantity);
+}
+
 function renderQuoteTotalRow(label, value, className = "") {
   const rowClass = className ? `quote-total-row ${className}` : "quote-total-row";
 
@@ -343,6 +353,7 @@ function renderCalculation(calculation) {
     Number(totals.size_upcharge_cents) ||
     Number(pricingDebug.sizeUpchargeCents) ||
     0;
+  const finalAveragePerShirtCents = getFinalAveragePerShirtCents(totals);
   const dealRows = [
     pricingLabel
       ? renderQuoteTotalRow("Pricing Deal", pricingLabel)
@@ -369,7 +380,7 @@ function renderCalculation(calculation) {
     ${renderQuoteTotalRow("Blank", item.blank_label)}
     ${renderQuoteTotalRow("Total Qty", totals.total_quantity)}
     ${dealRows}
-    ${renderQuoteTotalRow("Per Shirt", formatMoney(totals.price_per_shirt_cents))}
+    ${renderQuoteTotalRow("Per Shirt", formatMoney(finalAveragePerShirtCents))}
     ${renderQuoteTotalRow("Blank Cost", formatMoney(totals.blank_cost_cents))}
     ${renderQuoteTotalRow("Print Cost", formatMoney(totals.print_cost_cents))}
     ${renderQuoteTotalRow("Setup Fees", formatMoney(totals.setup_fee_cents))}
@@ -393,7 +404,7 @@ function updateMobileQuoteBar() {
   mobileQuoteBar.hidden = !hasCalculation;
   mobileQuoteBar.classList.toggle("has-calculation", hasCalculation);
   mobileQuoteTotal.textContent = hasCalculation
-    ? `Quote: ${formatMoney(totals.total_price_cents)} · ${formatMoney(totals.price_per_shirt_cents)} each`
+    ? `Quote: ${formatMoney(totals.total_price_cents)} · ${formatMoney(getFinalAveragePerShirtCents(totals))} each`
     : "Quote: Not calculated";
   mobileQuoteEach.textContent = hasCalculation
     ? "Ready to save"
@@ -701,6 +712,7 @@ function renderQuoteDetail(quote) {
 
   const item = quote.items?.[0];
   const canEdit = quote.status === "draft" && !quote.converted_job_id;
+  const finalAveragePerShirtCents = getFinalAveragePerShirtCents(quote);
   const placements = (item?.placements || [])
     .map((placement) =>
       String(placement)
@@ -770,7 +782,7 @@ function renderQuoteDetail(quote) {
     </div>
     <div class="quote-total-row">
       <strong>Per Shirt</strong>
-      <span>${formatMoney(quote.price_per_shirt_cents)}</span>
+      <span>${formatMoney(finalAveragePerShirtCents)}</span>
     </div>
     <div class="quote-total-row">
       <strong>Profit</strong>
@@ -858,6 +870,7 @@ async function loadQuotes() {
           const isConverted = quote.status === "converted" || quote.converted_job_id;
           const isArchived = quote.status === "archived";
           const canEdit = quote.status === "draft" && !quote.converted_job_id;
+          const finalAveragePerShirtCents = getFinalAveragePerShirtCents(quote);
 
           return `
           <article class="quote-draft-card">
@@ -866,7 +879,7 @@ async function loadQuotes() {
               <span class="quote-status-pill">${escapeHtml(formatStatus(quote.status))}</span>
             </div>
             <p>${escapeHtml(quote.total_quantity)} shirts - ${formatMoney(quote.total_price_cents)}</p>
-            <p>${formatMoney(quote.price_per_shirt_cents)} each - Profit ${formatMoney(quote.profit_cents)}</p>
+            <p>${formatMoney(finalAveragePerShirtCents)} each - Profit ${formatMoney(quote.profit_cents)}</p>
             <p>Due ${escapeHtml(formatDate(quote.due_date))}</p>
             ${isConverted ? `<p>Converted to job #${escapeHtml(quote.converted_job_id)}</p>` : ""}
 
