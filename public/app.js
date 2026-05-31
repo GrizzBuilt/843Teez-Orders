@@ -1053,6 +1053,14 @@ ${
         <div class="counter-controls">
           <button
             type="button"
+            class="counter-btn minus-twelve"
+            style="min-width:52px; min-height:52px; font-size:1rem; font-weight:700;"
+          >
+            -12
+          </button>
+
+          <button
+            type="button"
             class="counter-btn minus"
             style="min-width:52px; min-height:52px; font-size:1.4rem; font-weight:700;"
           >
@@ -1072,6 +1080,14 @@ ${
             style="min-width:52px; min-height:52px; font-size:1.4rem; font-weight:700;"
           >
             +
+          </button>
+
+          <button
+            type="button"
+            class="counter-btn plus-twelve"
+            style="min-width:52px; min-height:52px; font-size:1rem; font-weight:700;"
+          >
+            +12
           </button>
 
           <button
@@ -1171,14 +1187,23 @@ ${
 // =====================
 if (job.status === "at_the_plate") {
   const counterWrap = article.querySelector(".production-counter");
+  const minusTwelveBtn = article.querySelector(".counter-btn.minus-twelve");
   const minusBtn = article.querySelector(".counter-btn.minus");
   const plusBtn = article.querySelector(".counter-btn.plus");
+  const plusTwelveBtn = article.querySelector(".counter-btn.plus-twelve");
   const resetBtn = article.querySelector(".counter-reset");
   const markReadyBtn = article.querySelector(".counter-mark-ready-btn");
   const remainingEl = article.querySelector(".counter-remaining");
   const doneEl = article.querySelector(".counter-done");
 
   const total = Number(job.quantity) || 0;
+  const counterButtons = [minusTwelveBtn, minusBtn, plusBtn, plusTwelveBtn, resetBtn];
+
+  function setCounterButtonsDisabled(disabled) {
+    counterButtons.forEach((button) => {
+      if (button) button.disabled = disabled;
+    });
+  }
 
   function applyCompleteVisuals(remainingVal) {
     const isComplete = remainingVal === 0;
@@ -1269,9 +1294,7 @@ scrollToColumn("ready");
 
 minusBtn?.addEventListener("click", async () => {
   try {
-    minusBtn.disabled = true;
-    plusBtn.disabled = true;
-    resetBtn.disabled = true;
+    setCounterButtonsDisabled(true);
 
     const current = getSavedCounter(job);
     await updateDisplay(current - 1);
@@ -1281,17 +1304,13 @@ minusBtn?.addEventListener("click", async () => {
     showApiError("Could not update counter", error);
     await loadJobs();
   } finally {
-    minusBtn.disabled = false;
-    plusBtn.disabled = false;
-    resetBtn.disabled = false;
+    setCounterButtonsDisabled(false);
   }
 });
 
 plusBtn?.addEventListener("click", async () => {
   try {
-    minusBtn.disabled = true;
-    plusBtn.disabled = true;
-    resetBtn.disabled = true;
+    setCounterButtonsDisabled(true);
 
     const current = getSavedCounter(job);
     await updateDisplay(current + 1);
@@ -1301,17 +1320,45 @@ plusBtn?.addEventListener("click", async () => {
     showApiError("Could not update counter", error);
     await loadJobs();
   } finally {
-    minusBtn.disabled = false;
-    plusBtn.disabled = false;
-    resetBtn.disabled = false;
+    setCounterButtonsDisabled(false);
+  }
+});
+
+minusTwelveBtn?.addEventListener("click", async () => {
+  try {
+    setCounterButtonsDisabled(true);
+
+    const current = getSavedCounter(job);
+    await updateDisplay(current - 12);
+    playCounterClick();
+  } catch (error) {
+    console.error(error);
+    showApiError("Could not update counter", error);
+    await loadJobs();
+  } finally {
+    setCounterButtonsDisabled(false);
+  }
+});
+
+plusTwelveBtn?.addEventListener("click", async () => {
+  try {
+    setCounterButtonsDisabled(true);
+
+    const current = getSavedCounter(job);
+    await updateDisplay(current + 12);
+    playCounterClick();
+  } catch (error) {
+    console.error(error);
+    showApiError("Could not update counter", error);
+    await loadJobs();
+  } finally {
+    setCounterButtonsDisabled(false);
   }
 });
 
 resetBtn?.addEventListener("click", async () => {
   try {
-    minusBtn.disabled = true;
-    plusBtn.disabled = true;
-    resetBtn.disabled = true;
+    setCounterButtonsDisabled(true);
 
     await updateDisplay(total);
     playCounterClick();
@@ -1320,9 +1367,7 @@ resetBtn?.addEventListener("click", async () => {
     showApiError("Could not reset counter", error);
     await loadJobs();
   } finally {
-    minusBtn.disabled = false;
-    plusBtn.disabled = false;
-    resetBtn.disabled = false;
+    setCounterButtonsDisabled(false);
   }
 });
 
