@@ -619,7 +619,7 @@ function openModal() {
   setBodyModalOpen(true);
 
   window.requestAnimationFrame(() => {
-    const firstTarget = orderNumberInput || customerNameInput || modalEl;
+    const firstTarget = customerNameInput || modalEl;
     firstTarget?.focus();
   });
  if (orderNumberInput) {
