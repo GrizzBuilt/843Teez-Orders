@@ -42,8 +42,12 @@ const mobileQuoteEach = document.getElementById("mobile-quote-each");
 const mobileCalculateQuoteBtn = document.getElementById("mobile-calculate-quote-btn");
 const mobileSaveQuoteBtn = document.getElementById("mobile-save-quote-btn");
 const sleeveToggleCard = document.getElementById("sleeve-toggle-card");
+const printTypeSelect = document.getElementById("print_type");
+const basePlacementSelect = document.getElementById("base_placement");
 const dtfSourceSelect = document.getElementById("dtf_source");
 const dtfCostPerShirtInput = document.getElementById("dtf_cost_per_shirt");
+const dtfSourceField = document.getElementById("dtf-source-field");
+const dtfCostField = document.getElementById("dtf-cost-field");
 
 const DTF_SOURCE_DEFAULT_COSTS = {
   in_house_dtf: 3,
@@ -353,8 +357,16 @@ function syncSleeveToggleUi() {
   }
 }
 
+function syncPrintTypeUi() {
+  const isDtf = (printTypeSelect?.value || "DTF") === "DTF";
+
+  if (dtfSourceField) dtfSourceField.hidden = !isDtf;
+  if (dtfCostField) dtfCostField.hidden = !isDtf;
+}
+
 function getSelectedPlacements() {
-  return isSleeveSelected ? ["full_front", "sleeve"] : ["full_front"];
+  const basePlacement = basePlacementSelect?.value || "full_front";
+  return isSleeveSelected ? [basePlacement, "sleeve"] : [basePlacement];
 }
 
 function getQuotePayload() {
@@ -384,7 +396,7 @@ function getQuotePayload() {
     item: {
       shirt_blank_id: Number(formData.get("shirt_blank_id") || 0),
       color: String(formData.get("color") || "").trim(),
-      print_type: "DTF",
+      print_type: String(formData.get("print_type") || "DTF"),
       placements: getSelectedPlacements(),
       sizes: getSizeQuantities(),
     },
@@ -405,11 +417,16 @@ function getMissingQuoteInputMessage() {
     return "Choose a shirt blank before calculating.";
   }
 
+  if (!payload.item.placements.some((placement) => placement !== "sleeve")) {
+    return "Choose a print placement before calculating.";
+  }
+
   if (totalQuantity < 1) {
     return "Enter at least one shirt quantity before calculating.";
   }
 
   if (
+    payload.item.print_type === "DTF" &&
     payload.pricing_safety.dtf_source === "manual_custom" &&
     payload.pricing_safety.dtf_cost_per_shirt_cents == null
   ) {
@@ -480,67 +497,84 @@ function renderCalculation(calculation) {
       : "",
   ].join("");
   const marginStatus = String(safety.margin_status || "");
-  const safetySummary = safety.total_landed_cost_cents != null
+  const hasManualOverride =
+    safety.total_landed_cost_cents != null &&
+    Number(safety.quoted_total_cents) !== Number(safety.recommended_total_cents);
+  const placementRows = Array.isArray(item.placement_breakdown)
+    ? item.placement_breakdown
+        .map((placement) =>
+          renderQuoteTotalRow(
+            `${String(placement.label || placement.placement || "Placement")}`,
+            `Rule ${placement.rule_id || "n/a"} · Cost ${formatMoney(placement.print_cost_cents)}`
+          )
+        )
+        .join("")
+    : "";
+  const warning = safety.low_margin_warning
     ? `
-      ${
-        safety.low_margin_warning
-          ? `
-            <section class="pricing-warning" role="alert">
-              <h3>Low Margin Warning</h3>
-              ${renderQuoteTotalRow("Current Price / Shirt", formatMoney(safety.quoted_price_per_shirt_cents))}
-              ${renderQuoteTotalRow("Recommended Price / Shirt", formatMoney(safety.recommended_price_per_shirt_cents))}
-              ${renderQuoteTotalRow("Current Gross Margin", formatBasisPoints(safety.gross_margin_basis_points))}
-              ${renderQuoteTotalRow("Required Gross Margin", formatBasisPoints(safety.target_margin_basis_points))}
-              ${renderQuoteTotalRow("Current Gross Profit", formatMoney(safety.gross_profit_cents))}
-              ${renderQuoteTotalRow("Recommended Gross Profit", formatMoney(safety.recommended_profit_cents))}
-              ${renderQuoteTotalRow("Recommended Total Quote", formatMoney(safety.recommended_total_cents))}
-            </section>
-          `
-          : ""
-      }
-      <section class="pricing-safety-summary margin-${escapeHtml(marginStatus)}">
-        <div class="pricing-safety-heading">
-          <h3>Pricing Safety</h3>
-          <span class="margin-status">${escapeHtml(formatMarginStatus(marginStatus))}</span>
-        </div>
-        <div class="pricing-safety-metrics">
-          <div><span>Cost / Shirt</span><strong>${formatMoney(safety.landed_cost_per_shirt_cents)}</strong></div>
-          <div><span>Profit / Shirt</span><strong>${formatMoney(safety.gross_profit_per_shirt_cents)}</strong></div>
-          <div><span>Recommended Price</span><strong>${formatMoney(safety.recommended_price_per_shirt_cents)}</strong></div>
-          <div><span>Recommended Total</span><strong>${formatMoney(safety.recommended_total_cents)}</strong></div>
-        </div>
-        ${renderQuoteTotalRow("Print Source", safety.dtf_source_label || "Not set")}
-        ${renderQuoteTotalRow("DTF Cost / Shirt", formatMoney(safety.dtf_cost_per_shirt_cents))}
-        ${renderQuoteTotalRow("Total DTF Cost", formatMoney(safety.dtf_print_cost_cents))}
-        ${renderQuoteTotalRow("Total Landed Cost", formatMoney(safety.total_landed_cost_cents))}
-        ${renderQuoteTotalRow("Customer Quoted Total", formatMoney(safety.quoted_total_cents))}
-        ${renderQuoteTotalRow("Gross Profit", formatMoney(safety.gross_profit_cents))}
-        ${renderQuoteTotalRow("Gross Margin", formatBasisPoints(safety.gross_margin_basis_points))}
-        ${renderQuoteTotalRow("Target Margin", formatBasisPoints(safety.target_margin_basis_points))}
-        ${renderQuoteTotalRow("Minimum Profit / Shirt", formatMoney(safety.minimum_profit_per_shirt_cents))}
-        ${renderQuoteTotalRow("Margin-Based Price", formatMoney(safety.margin_price_per_shirt_cents))}
-        ${renderQuoteTotalRow("Profit-Floor Price", formatMoney(safety.profit_price_per_shirt_cents))}
-        ${renderQuoteTotalRow("Recommended Gross Profit", formatMoney(safety.recommended_profit_cents))}
-        ${renderQuoteTotalRow("Recommended Margin", formatBasisPoints(safety.recommended_margin_basis_points))}
+      <section class="pricing-warning" role="alert">
+        <h3>Low Margin Warning</h3>
+        <p>Your manual price is below the protected recommendation.</p>
+        ${renderQuoteTotalRow("Your Price / Shirt", formatMoney(safety.quoted_price_per_shirt_cents))}
+        ${renderQuoteTotalRow("Recommended Price", formatMoney(safety.recommended_price_per_shirt_cents))}
+        ${renderQuoteTotalRow("Current Margin", formatBasisPoints(safety.gross_margin_basis_points))}
+        ${renderQuoteTotalRow("Recommended Total", formatMoney(safety.recommended_total_cents))}
       </section>
-      ${renderDtfSourceComparison(safety.dtf_source_comparison)}
+    `
+    : "";
+  const advancedResults = safety.total_landed_cost_cents != null
+    ? `
+      <details class="advanced-results">
+        <summary>Show Details</summary>
+        <div class="advanced-results-content">
+          ${renderQuoteTotalRow("Blank", item.blank_label)}
+          ${renderQuoteTotalRow("Total Qty", totals.total_quantity)}
+          ${dealRows}
+          ${renderQuoteTotalRow("Print Source", safety.dtf_source_label || "Not set")}
+          ${renderQuoteTotalRow("DTF Cost / Shirt", formatMoney(safety.dtf_cost_per_shirt_cents))}
+          ${renderQuoteTotalRow("Total DTF Cost", formatMoney(safety.dtf_print_cost_cents))}
+          ${renderQuoteTotalRow("Total Landed Cost", formatMoney(safety.total_landed_cost_cents))}
+          ${renderQuoteTotalRow("Customer Quote", formatMoney(safety.quoted_total_cents))}
+          ${renderQuoteTotalRow("Gross Profit", formatMoney(safety.gross_profit_cents))}
+          ${renderQuoteTotalRow("Target Margin", formatBasisPoints(safety.target_margin_basis_points))}
+          ${renderQuoteTotalRow("Minimum Profit / Shirt", formatMoney(safety.minimum_profit_per_shirt_cents))}
+          ${renderQuoteTotalRow("Margin-Based Price", formatMoney(safety.margin_price_per_shirt_cents))}
+          ${renderQuoteTotalRow("Profit-Floor Price", formatMoney(safety.profit_price_per_shirt_cents))}
+          ${renderQuoteTotalRow("Calculated Blank Cost", formatMoney(totals.blank_cost_cents))}
+          ${renderQuoteTotalRow("Calculated Print Cost", formatMoney(totals.print_cost_cents))}
+          ${renderQuoteTotalRow("Calculated Setup Fees", formatMoney(totals.setup_fee_cents))}
+          ${placementRows ? `<section class="placement-details"><h3>Placement Breakdown</h3>${placementRows}</section>` : ""}
+          ${renderDtfSourceComparison(safety.dtf_source_comparison)}
+          <details class="pricing-debug-details">
+            <summary>Pricing Debug</summary>
+            <pre>${escapeHtml(JSON.stringify(pricingDebug, null, 2))}</pre>
+          </details>
+        </div>
+      </details>
     `
     : "";
 
   quoteSummaryContent.innerHTML = `
-    ${renderQuoteTotalRow("Blank", item.blank_label)}
-    ${renderQuoteTotalRow("Total Qty", totals.total_quantity)}
-    ${dealRows}
-    ${renderQuoteTotalRow("Per Shirt", formatMoney(finalAveragePerShirtCents))}
-    ${renderQuoteTotalRow(
-      "Final Quote Total",
-      formatMoney(totals.total_price_cents),
-      "quote-grand-total"
-    )}
-    ${safetySummary}
-    ${renderQuoteTotalRow("Calculated Blank Cost", formatMoney(totals.blank_cost_cents))}
-    ${renderQuoteTotalRow("Calculated Print Cost", formatMoney(totals.print_cost_cents))}
-    ${renderQuoteTotalRow("Calculated Setup Fees", formatMoney(totals.setup_fee_cents))}
+    <section class="recommended-price-card margin-${escapeHtml(marginStatus)}">
+      <div class="recommended-price-heading">
+        <span>Recommended Price</span>
+        <strong>${formatMoney(safety.recommended_price_per_shirt_cents)} <small>per shirt</small></strong>
+      </div>
+      <div class="recommended-result-grid">
+        <div><span>Recommended Total</span><strong>${formatMoney(safety.recommended_total_cents)}</strong></div>
+        <div><span>Your Cost</span><strong>${formatMoney(safety.landed_cost_per_shirt_cents)}</strong></div>
+        <div><span>Profit Per Shirt</span><strong>${formatMoney(safety.gross_profit_per_shirt_cents)}</strong></div>
+        <div><span>Margin</span><strong>${formatBasisPoints(safety.gross_margin_basis_points)}</strong></div>
+      </div>
+      <div class="recommended-status-row">
+        <span>Status</span>
+        <strong class="margin-status">${escapeHtml(formatMarginStatus(marginStatus))}</strong>
+      </div>
+    </section>
+    ${hasManualOverride ? renderQuoteTotalRow("Your Customer Price", `${formatMoney(finalAveragePerShirtCents)} each`) : ""}
+    ${renderQuoteTotalRow("Quote Total", formatMoney(totals.total_price_cents), "quote-grand-total")}
+    ${warning}
+    ${advancedResults}
   `;
 
   updateMobileQuoteBar();
@@ -728,7 +762,7 @@ function setFormValue(name, value) {
   const field = quoteForm?.elements?.[name];
 
   if (field) {
-    field.value = name === "print_type" ? "DTF" : value ?? "";
+    field.value = value ?? "";
   }
 }
 
@@ -737,6 +771,7 @@ function resetQuoteForm() {
   quoteForm?.reset();
   isSleeveSelected = false;
   syncSleeveToggleUi();
+  syncPrintTypeUi();
   renderSizeInputs();
   closeSavePanel();
   lastCalculation = null;
@@ -827,8 +862,13 @@ async function editQuoteDraft(quoteId) {
     }
 
     const placements = item.placements || [];
+    setFormValue(
+      "base_placement",
+      placements.find((placement) => placement !== "sleeve") || "full_front"
+    );
     isSleeveSelected = placements.includes("sleeve");
     syncSleeveToggleUi();
+    syncPrintTypeUi();
 
     renderSizeInputs();
 
@@ -1254,6 +1294,7 @@ quoteForm?.addEventListener("input", (event) => {
     "shirt_blank_id",
     "color",
     "print_type",
+    "base_placement",
     "shirt_blank_cost",
     "shirt_shipping",
     "dtf_cost_per_shirt",
@@ -1297,6 +1338,11 @@ dtfSourceSelect?.addEventListener("change", async () => {
   }
 });
 
+printTypeSelect?.addEventListener("change", () => {
+  syncPrintTypeUi();
+  invalidateCalculation();
+});
+
 quoteForm?.addEventListener("change", (event) => {
   const target = event.target;
 
@@ -1338,6 +1384,7 @@ blankSelect?.addEventListener("change", () => {
 });
 
 syncSleeveToggleUi();
+syncPrintTypeUi();
 renderSizeInputs();
 updateMobileQuoteBar();
 setBusyState();

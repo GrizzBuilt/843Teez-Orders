@@ -37,11 +37,14 @@ item.placement_breakdown[0].print_price_per_shirt_cents
 
 Sell-price behavior:
 
-- `print_price_per_shirt_cents` is the final customer sell price per shirt.
-- Without a manual customer quote override, `total_price_cents` equals
-  `price_per_shirt_cents * total_quantity`, plus any size upcharges derived
-  from `shirt_blank_size_costs.extra_cost_cents`. That column stores the actual
-  blank cost for the size, not the customer upcharge.
+- `print_price_per_shirt_cents` remains the matched tier price and is preserved
+  in the pricing debug response.
+- Without a manual customer quote override, `total_price_cents` uses the
+  recommended protected price. The tier-derived total remains available as
+  `pricing_debug.calculatedTotalPriceCents` for verification.
+- Size upcharges are added to the recommended total. The
+  `shirt_blank_size_costs.extra_cost_cents` column stores actual blank cost for
+  the size, not the customer upcharge.
 - Blank cost and print cost stay internal-only cost tracking fields.
 - Customer sale price tiers are based on the configured base pricing blank,
   default `Port and Co PC43`. If the selected blank costs more than that PC43,
@@ -64,10 +67,10 @@ Sell-price behavior:
   base sale-price tier. It adds `sleeve_add_on_price_cents * total_quantity` to
   the customer total through `price_per_shirt_cents` and
   `sleeve_add_on_cost_cents * total_quantity` to internal print cost.
-- DTF sleeve add-on price is a flat $3.00 per shirt for every quantity. A
-  10-shirt quote with `full_front` at $12.00 and sleeve selected should total
-  $150.00 before size upcharges:
-  `(1200 * 10) + (300 * 10)`.
+- DTF sleeve add-on price is a flat $3.00 per shirt for every quantity. The
+  tier-derived baseline for 10 shirts with `full_front` at $12.00 and sleeve is
+  $150.00 before size upcharges: `(1200 * 10) + (300 * 10)`. The protected
+  recommended quote may be higher.
 - The same 10-shirt sleeve quote should return `price_per_shirt_cents = 1500`
   and `pricing_debug.basePricePerShirtCents = 1200`,
   `pricing_debug.sleeveAddOnPricePerShirtCents = 300`.
@@ -110,9 +113,23 @@ Expected `pricing_safety` values:
 | Recommended gross profit | $85.60 |
 | Margin status | Too Low |
 
-The calculator must still return the existing tier-derived customer total when
-all `pricing_safety` inputs are omitted. A manual customer price is allowed to
-remain below the recommendation, but `low_margin_warning` must be `true`.
+When no manual customer price is supplied, the calculator uses the recommended
+price as the quote total. A manual customer price is allowed to remain below
+the recommendation, but `low_margin_warning` must be `true`.
+
+## Recommended Price Workflow
+
+The normal quote screen keeps blank, size quantities, print/placement, DTF
+source, and the optional manual customer price visible. Shipping, packaging,
+setup/labor, manual landed costs, source comparison, placement rules, and debug
+data are behind Advanced or Show Details.
+
+Validation examples for 10 shirts with no size adjustment:
+
+| Blank Cost / Shirt | DTF Source | Estimated Cost / Shirt | Recommended Price | Recommended Total |
+| ---: | --- | ---: | ---: | ---: |
+| $6.56 | In-house DTF ($3.00) | $9.56 | $17.00 | $170.00 |
+| $6.56 | Outsourced DTF ($5.50) | $12.06 | $20.50 | $205.00 |
 
 ## DTF Source Comparison Verification
 

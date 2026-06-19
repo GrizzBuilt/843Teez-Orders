@@ -335,6 +335,138 @@
   margin-top: 0.75rem;
 }
 
+.quote-field[hidden] {
+  display: none;
+}
+
+.quote-field small {
+  color: var(--text-soft);
+  font-weight: 700;
+}
+
+.advanced-pricing,
+.advanced-results,
+.pricing-debug-details {
+  margin-top: 0.9rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.advanced-pricing > summary,
+.advanced-results > summary,
+.pricing-debug-details > summary {
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  color: var(--text);
+  font-weight: 850;
+}
+
+.advanced-results-content {
+  padding-bottom: 0.25rem;
+}
+
+.recommended-price-card {
+  border-top: 5px solid var(--brand-blue);
+  background: var(--surface-muted);
+  padding: 1rem;
+}
+
+.recommended-price-card.margin-healthy {
+  border-top-color: #16a34a;
+}
+
+.recommended-price-card.margin-tight {
+  border-top-color: #d97706;
+}
+
+.recommended-price-card.margin-too_low {
+  border-top-color: #dc2626;
+}
+
+.recommended-price-heading span,
+.recommended-price-heading strong,
+.recommended-result-grid span,
+.recommended-result-grid strong {
+  display: block;
+}
+
+.recommended-price-heading > span {
+  color: var(--text-soft);
+  font-size: 0.82rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.recommended-price-heading > strong {
+  margin-top: 0.25rem;
+  color: var(--text);
+  font-size: 2.25rem;
+  line-height: 1.1;
+}
+
+.recommended-price-heading small {
+  color: var(--text-soft);
+  font-size: 0.9rem;
+}
+
+.recommended-result-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 1rem;
+  border: 1px solid var(--border-soft);
+  background: var(--border-soft);
+}
+
+.recommended-result-grid > div {
+  min-width: 0;
+  padding: 0.75rem;
+  background: var(--surface);
+}
+
+.recommended-result-grid span {
+  color: var(--text-soft);
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.recommended-result-grid strong {
+  margin-top: 0.2rem;
+  color: var(--text);
+  font-size: 1.05rem;
+}
+
+.recommended-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  font-weight: 800;
+}
+
+.placement-details {
+  margin-top: 0.75rem;
+}
+
+.placement-details h3 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.pricing-debug-details pre {
+  max-height: 320px;
+  overflow: auto;
+  margin: 0 0 0.75rem;
+  padding: 0.75rem;
+  background: var(--surface-muted);
+  color: var(--text);
+  font-size: 0.72rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .pricing-helper-notes {
   margin-top: 0.75rem;
   padding-left: 0.75rem;
@@ -871,6 +1003,14 @@ body.dark-mode .margin-too_low .margin-status {
 
   .pricing-safety-metrics {
     grid-template-columns: 1fr;
+  }
+
+  .recommended-result-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .recommended-price-heading > strong {
+    font-size: 1.8rem;
   }
 
   .dtf-comparison-grid {
