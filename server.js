@@ -432,6 +432,25 @@ db.serialize(() => {
       total_price_cents INTEGER NOT NULL DEFAULT 0,
       price_per_shirt_cents INTEGER NOT NULL DEFAULT 0,
       profit_cents INTEGER NOT NULL DEFAULT 0,
+      landed_shirt_blank_cost_cents INTEGER NOT NULL DEFAULT 0,
+      shirt_shipping_cents INTEGER NOT NULL DEFAULT 0,
+      landed_dtf_print_cost_cents INTEGER NOT NULL DEFAULT 0,
+      dtf_shipping_cents INTEGER NOT NULL DEFAULT 0,
+      misc_cost_cents INTEGER NOT NULL DEFAULT 0,
+      setup_labor_cost_cents INTEGER NOT NULL DEFAULT 0,
+      total_landed_cost_cents INTEGER NOT NULL DEFAULT 0,
+      landed_cost_per_shirt_cents INTEGER NOT NULL DEFAULT 0,
+      gross_profit_per_shirt_cents INTEGER NOT NULL DEFAULT 0,
+      gross_margin_basis_points INTEGER NOT NULL DEFAULT 0,
+      target_margin_basis_points INTEGER NOT NULL DEFAULT 0,
+      minimum_profit_per_shirt_cents INTEGER NOT NULL DEFAULT 0,
+      margin_price_per_shirt_cents INTEGER NOT NULL DEFAULT 0,
+      profit_price_per_shirt_cents INTEGER NOT NULL DEFAULT 0,
+      recommended_price_per_shirt_cents INTEGER NOT NULL DEFAULT 0,
+      recommended_total_cents INTEGER NOT NULL DEFAULT 0,
+      recommended_profit_cents INTEGER NOT NULL DEFAULT 0,
+      recommended_margin_basis_points INTEGER NOT NULL DEFAULT 0,
+      margin_status TEXT NOT NULL DEFAULT '',
       converted_job_id INTEGER,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -741,6 +760,48 @@ db.serialize(() => {
         }
       });
     }
+  });
+
+  db.all(`PRAGMA table_info(quotes)`, [], (pragmaErr, columns) => {
+    if (pragmaErr) {
+      console.error("Error reading quotes table schema:", pragmaErr.message);
+      return;
+    }
+
+    const existingColumns = new Set(columns.map((column) => column.name));
+    const pricingSafetyColumns = [
+      ["landed_shirt_blank_cost_cents", "INTEGER NOT NULL DEFAULT 0"],
+      ["shirt_shipping_cents", "INTEGER NOT NULL DEFAULT 0"],
+      ["landed_dtf_print_cost_cents", "INTEGER NOT NULL DEFAULT 0"],
+      ["dtf_shipping_cents", "INTEGER NOT NULL DEFAULT 0"],
+      ["misc_cost_cents", "INTEGER NOT NULL DEFAULT 0"],
+      ["setup_labor_cost_cents", "INTEGER NOT NULL DEFAULT 0"],
+      ["total_landed_cost_cents", "INTEGER NOT NULL DEFAULT 0"],
+      ["landed_cost_per_shirt_cents", "INTEGER NOT NULL DEFAULT 0"],
+      ["gross_profit_per_shirt_cents", "INTEGER NOT NULL DEFAULT 0"],
+      ["gross_margin_basis_points", "INTEGER NOT NULL DEFAULT 0"],
+      ["target_margin_basis_points", "INTEGER NOT NULL DEFAULT 0"],
+      ["minimum_profit_per_shirt_cents", "INTEGER NOT NULL DEFAULT 0"],
+      ["margin_price_per_shirt_cents", "INTEGER NOT NULL DEFAULT 0"],
+      ["profit_price_per_shirt_cents", "INTEGER NOT NULL DEFAULT 0"],
+      ["recommended_price_per_shirt_cents", "INTEGER NOT NULL DEFAULT 0"],
+      ["recommended_total_cents", "INTEGER NOT NULL DEFAULT 0"],
+      ["recommended_profit_cents", "INTEGER NOT NULL DEFAULT 0"],
+      ["recommended_margin_basis_points", "INTEGER NOT NULL DEFAULT 0"],
+      ["margin_status", "TEXT NOT NULL DEFAULT ''"],
+    ];
+
+    pricingSafetyColumns.forEach(([name, definition]) => {
+      if (existingColumns.has(name)) return;
+
+      db.run(`ALTER TABLE quotes ADD COLUMN ${name} ${definition}`, (alterErr) => {
+        if (alterErr) {
+          console.error(`Error adding quotes.${name}:`, alterErr.message);
+        } else {
+          console.log(`Added quotes.${name}.`);
+        }
+      });
+    });
   });
 
   db.all(`PRAGMA table_info(print_pricing_rules)`, [], (pragmaErr, columns) => {
@@ -1235,6 +1296,15 @@ const QUOTE_PLACEMENTS = {
 
 const SLEEVE_ADD_ON_PRICE_CENTS = 300;
 
+const QUOTE_PROFIT_PROTECTION_TIERS = [
+  { min: 1, max: 4, target_margin_basis_points: 5000, minimum_profit_cents: 1200 },
+  { min: 5, max: 9, target_margin_basis_points: 4500, minimum_profit_cents: 900 },
+  { min: 10, max: 24, target_margin_basis_points: 4000, minimum_profit_cents: 700 },
+  { min: 25, max: 49, target_margin_basis_points: 3500, minimum_profit_cents: 500 },
+  { min: 50, max: 99, target_margin_basis_points: 3000, minimum_profit_cents: 400 },
+  { min: 100, max: null, target_margin_basis_points: 2800, minimum_profit_cents: 300 },
+];
+
 function normalizeQuoteListStatus(value) {
   const allowedStatuses = new Set([
     "active",
@@ -1252,6 +1322,120 @@ function normalizeQuoteListStatus(value) {
 function normalizeMoneyCents(value) {
   const cents = Number(value);
   return Number.isFinite(cents) ? Math.max(0, Math.round(cents)) : 0;
+}
+
+function normalizeOptionalMoneyCents(value) {
+  if (value == null || value === "") {
+    return null;
+  }
+
+  return normalizeMoneyCents(value);
+}
+
+function getQuoteProfitProtectionTier(quantity) {
+  return QUOTE_PROFIT_PROTECTION_TIERS.find(
+    (tier) => quantity >= tier.min && (tier.max == null || quantity <= tier.max)
+  );
+}
+
+function calculateQuotePricingSafety({
+  input,
+  totalQuantity,
+  calculatedBlankCostCents,
+  calculatedPrintCostCents,
+  calculatedSetupFeeCents,
+  calculatedTotalPriceCents,
+}) {
+  const safetyInput = input?.pricing_safety && typeof input.pricing_safety === "object"
+    ? input.pricing_safety
+    : {};
+  const tier = getQuoteProfitProtectionTier(totalQuantity);
+  const landedShirtBlankCostCents =
+    normalizeOptionalMoneyCents(safetyInput.shirt_blank_cost_cents) ??
+    calculatedBlankCostCents;
+  const shirtShippingCents = normalizeMoneyCents(safetyInput.shirt_shipping_cents);
+  const landedDtfPrintCostCents =
+    normalizeOptionalMoneyCents(safetyInput.dtf_print_cost_cents) ??
+    calculatedPrintCostCents;
+  const dtfShippingCents = normalizeMoneyCents(safetyInput.dtf_shipping_cents);
+  const miscCostCents = normalizeMoneyCents(safetyInput.misc_cost_cents);
+  const setupLaborCostCents =
+    normalizeOptionalMoneyCents(safetyInput.setup_labor_cost_cents) ??
+    calculatedSetupFeeCents;
+  const quotedTotalOverrideCents = normalizeOptionalMoneyCents(
+    safetyInput.quoted_total_cents
+  );
+  const quotedPricePerShirtOverrideCents = normalizeOptionalMoneyCents(
+    safetyInput.quoted_price_per_shirt_cents
+  );
+  const quotedTotalCents = quotedTotalOverrideCents ??
+    (quotedPricePerShirtOverrideCents == null
+      ? calculatedTotalPriceCents
+      : quotedPricePerShirtOverrideCents * totalQuantity);
+  const quotedPricePerShirtCents = Math.round(quotedTotalCents / totalQuantity);
+  const totalLandedCostCents =
+    landedShirtBlankCostCents +
+    shirtShippingCents +
+    landedDtfPrintCostCents +
+    dtfShippingCents +
+    miscCostCents +
+    setupLaborCostCents;
+  const landedCostPerShirtRaw = totalLandedCostCents / totalQuantity;
+  const landedCostPerShirtCents = Math.round(landedCostPerShirtRaw);
+  const grossProfitCents = quotedTotalCents - totalLandedCostCents;
+  const grossProfitPerShirtCents = Math.round(grossProfitCents / totalQuantity);
+  const grossMargin = quotedTotalCents > 0 ? grossProfitCents / quotedTotalCents : 0;
+  const grossMarginBasisPoints = Math.round(grossMargin * 10000);
+  const targetMarginBasisPoints = tier.target_margin_basis_points;
+  const targetMargin = targetMarginBasisPoints / 10000;
+  const minimumProfitPerShirtCents = tier.minimum_profit_cents;
+  const marginPricePerShirtCents = Math.ceil(
+    landedCostPerShirtRaw / (1 - targetMargin)
+  );
+  const profitPricePerShirtCents = Math.ceil(
+    landedCostPerShirtRaw + minimumProfitPerShirtCents
+  );
+  const recommendedPricePerShirtCents =
+    Math.ceil(
+      Math.max(marginPricePerShirtCents, profitPricePerShirtCents) / 50
+    ) * 50;
+  const recommendedTotalCents = recommendedPricePerShirtCents * totalQuantity;
+  const recommendedProfitCents = recommendedTotalCents - totalLandedCostCents;
+  const recommendedMargin = recommendedTotalCents > 0
+    ? recommendedProfitCents / recommendedTotalCents
+    : 0;
+  const recommendedMarginBasisPoints = Math.round(recommendedMargin * 10000);
+  const marginStatus = quotedPricePerShirtCents >= recommendedPricePerShirtCents
+    ? "healthy"
+    : quotedPricePerShirtCents >= recommendedPricePerShirtCents * 0.9
+      ? "tight"
+      : "too_low";
+
+  return {
+    shirt_blank_cost_cents: landedShirtBlankCostCents,
+    shirt_shipping_cents: shirtShippingCents,
+    dtf_print_cost_cents: landedDtfPrintCostCents,
+    dtf_shipping_cents: dtfShippingCents,
+    misc_cost_cents: miscCostCents,
+    setup_labor_cost_cents: setupLaborCostCents,
+    total_landed_cost_cents: totalLandedCostCents,
+    landed_cost_per_shirt_cents: landedCostPerShirtCents,
+    quoted_total_cents: quotedTotalCents,
+    quoted_price_per_shirt_cents: quotedPricePerShirtCents,
+    gross_profit_cents: grossProfitCents,
+    gross_profit_per_shirt_cents: grossProfitPerShirtCents,
+    gross_margin_basis_points: grossMarginBasisPoints,
+    target_margin_basis_points: targetMarginBasisPoints,
+    minimum_profit_per_shirt_cents: minimumProfitPerShirtCents,
+    margin_price_per_shirt_cents: marginPricePerShirtCents,
+    profit_price_per_shirt_cents: profitPricePerShirtCents,
+    recommended_price_per_shirt_cents: recommendedPricePerShirtCents,
+    recommended_total_cents: recommendedTotalCents,
+    recommended_profit_cents: recommendedProfitCents,
+    recommended_margin_basis_points: recommendedMarginBasisPoints,
+    margin_status: marginStatus,
+    low_margin_warning: quotedPricePerShirtCents < recommendedPricePerShirtCents,
+  };
 }
 
 function normalizeActive(value) {
@@ -1782,13 +1966,21 @@ async function calculateQuote(input) {
   const baseSubtotalCents = basePricePerShirtCents * totalQuantity;
   const baseDealSubtotalCents = baseSubtotalCents;
   const blankUpgradeTotalCents = blankUpgradePerShirtCents * totalQuantity;
-  const totalPriceCents =
+  const calculatedTotalPriceCents =
     baseSubtotalCents +
     blankUpgradeTotalCents +
     sizeUpchargeTotalCents +
     sleeveAddOnTotalCents;
-  const profitCents =
-    totalPriceCents - blankCostCents - printCostCents - setupFeeCents;
+  const pricingSafety = calculateQuotePricingSafety({
+    input,
+    totalQuantity,
+    calculatedBlankCostCents: blankCostCents,
+    calculatedPrintCostCents: printCostCents,
+    calculatedSetupFeeCents: setupFeeCents,
+    calculatedTotalPriceCents,
+  });
+  const totalPriceCents = pricingSafety.quoted_total_cents;
+  const profitCents = pricingSafety.gross_profit_cents;
   console.log("SIZE DEBUG", {
     sizes,
     calculatedSizes,
@@ -1799,7 +1991,9 @@ async function calculateQuote(input) {
     totalQuantity,
     baseSubtotalCents,
     pricePerShirtCents,
+    calculatedTotalPriceCents,
     totalPriceCents,
+    pricingSafety,
   });
   const pricingDebug = {
     totalQuantity,
@@ -1823,12 +2017,15 @@ async function calculateQuote(input) {
     sizeUpchargeCents: sizeUpchargeTotalCents,
     blankCostCents,
     pricePerShirtCents,
+    calculatedTotalPriceCents,
     totalPriceCents,
+    pricingSafety,
   };
 
   return {
     pricing_label: pricingLabel,
     pricing_debug: pricingDebug,
+    pricing_safety: pricingSafety,
     item: {
       shirt_blank_id: shirtBlankId,
       blank_label: getBlankLabel(blank),
@@ -1853,6 +2050,7 @@ async function calculateQuote(input) {
       size_upcharge_total_cents: sizeUpchargeTotalCents,
       size_upcharge_cents: sizeUpchargeTotalCents,
       pricing_debug: pricingDebug,
+      pricing_safety: pricingSafety,
     },
     totals: {
       total_quantity: totalQuantity,
@@ -1869,6 +2067,7 @@ async function calculateQuote(input) {
       size_upcharge_total_cents: sizeUpchargeTotalCents,
       size_upcharge_cents: sizeUpchargeTotalCents,
       pricing_debug: pricingDebug,
+      pricing_safety: pricingSafety,
     },
   };
 }
@@ -2566,6 +2765,15 @@ app.get("/api/quotes", async (req, res) => {
           total_price_cents,
           price_per_shirt_cents,
           profit_cents,
+          total_landed_cost_cents,
+          landed_cost_per_shirt_cents,
+          gross_profit_per_shirt_cents,
+          gross_margin_basis_points,
+          target_margin_basis_points,
+          recommended_price_per_shirt_cents,
+          recommended_total_cents,
+          recommended_profit_cents,
+          margin_status,
           converted_job_id,
           created_at,
           updated_at
@@ -2706,6 +2914,7 @@ app.post("/api/quotes", async (req, res) => {
     const calculation = await calculateQuote(quoteInput);
     const item = calculation.item;
     const totals = calculation.totals;
+    const safety = totals.pricing_safety;
 
     await dbRun("BEGIN IMMEDIATE TRANSACTION");
 
@@ -2725,9 +2934,28 @@ app.post("/api/quotes", async (req, res) => {
             setup_fee_cents,
             total_price_cents,
             price_per_shirt_cents,
-            profit_cents
+            profit_cents,
+            landed_shirt_blank_cost_cents,
+            shirt_shipping_cents,
+            landed_dtf_print_cost_cents,
+            dtf_shipping_cents,
+            misc_cost_cents,
+            setup_labor_cost_cents,
+            total_landed_cost_cents,
+            landed_cost_per_shirt_cents,
+            gross_profit_per_shirt_cents,
+            gross_margin_basis_points,
+            target_margin_basis_points,
+            minimum_profit_per_shirt_cents,
+            margin_price_per_shirt_cents,
+            profit_price_per_shirt_cents,
+            recommended_price_per_shirt_cents,
+            recommended_total_cents,
+            recommended_profit_cents,
+            recommended_margin_basis_points,
+            margin_status
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           customerName,
@@ -2743,6 +2971,25 @@ app.post("/api/quotes", async (req, res) => {
           totals.total_price_cents,
           totals.price_per_shirt_cents,
           totals.profit_cents,
+          safety.shirt_blank_cost_cents,
+          safety.shirt_shipping_cents,
+          safety.dtf_print_cost_cents,
+          safety.dtf_shipping_cents,
+          safety.misc_cost_cents,
+          safety.setup_labor_cost_cents,
+          safety.total_landed_cost_cents,
+          safety.landed_cost_per_shirt_cents,
+          safety.gross_profit_per_shirt_cents,
+          safety.gross_margin_basis_points,
+          safety.target_margin_basis_points,
+          safety.minimum_profit_per_shirt_cents,
+          safety.margin_price_per_shirt_cents,
+          safety.profit_price_per_shirt_cents,
+          safety.recommended_price_per_shirt_cents,
+          safety.recommended_total_cents,
+          safety.recommended_profit_cents,
+          safety.recommended_margin_basis_points,
+          safety.margin_status,
         ]
       );
 
@@ -2816,6 +3063,7 @@ app.patch("/api/quotes/:id", async (req, res) => {
       const calculation = await calculateQuote(quoteInput);
       const item = calculation.item;
       const totals = calculation.totals;
+      const safety = totals.pricing_safety;
 
       const existingItems = await dbAll(
         `
@@ -2854,6 +3102,25 @@ app.patch("/api/quotes/:id", async (req, res) => {
               total_price_cents = ?,
               price_per_shirt_cents = ?,
               profit_cents = ?,
+              landed_shirt_blank_cost_cents = ?,
+              shirt_shipping_cents = ?,
+              landed_dtf_print_cost_cents = ?,
+              dtf_shipping_cents = ?,
+              misc_cost_cents = ?,
+              setup_labor_cost_cents = ?,
+              total_landed_cost_cents = ?,
+              landed_cost_per_shirt_cents = ?,
+              gross_profit_per_shirt_cents = ?,
+              gross_margin_basis_points = ?,
+              target_margin_basis_points = ?,
+              minimum_profit_per_shirt_cents = ?,
+              margin_price_per_shirt_cents = ?,
+              profit_price_per_shirt_cents = ?,
+              recommended_price_per_shirt_cents = ?,
+              recommended_total_cents = ?,
+              recommended_profit_cents = ?,
+              recommended_margin_basis_points = ?,
+              margin_status = ?,
               updated_at = CURRENT_TIMESTAMP
           WHERE id = ?
         `,
@@ -2870,6 +3137,25 @@ app.patch("/api/quotes/:id", async (req, res) => {
           totals.total_price_cents,
           totals.price_per_shirt_cents,
           totals.profit_cents,
+          safety.shirt_blank_cost_cents,
+          safety.shirt_shipping_cents,
+          safety.dtf_print_cost_cents,
+          safety.dtf_shipping_cents,
+          safety.misc_cost_cents,
+          safety.setup_labor_cost_cents,
+          safety.total_landed_cost_cents,
+          safety.landed_cost_per_shirt_cents,
+          safety.gross_profit_per_shirt_cents,
+          safety.gross_margin_basis_points,
+          safety.target_margin_basis_points,
+          safety.minimum_profit_per_shirt_cents,
+          safety.margin_price_per_shirt_cents,
+          safety.profit_price_per_shirt_cents,
+          safety.recommended_price_per_shirt_cents,
+          safety.recommended_total_cents,
+          safety.recommended_profit_cents,
+          safety.recommended_margin_basis_points,
+          safety.margin_status,
           quoteId,
         ]
       );

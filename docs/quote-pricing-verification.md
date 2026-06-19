@@ -38,10 +38,10 @@ item.placement_breakdown[0].print_price_per_shirt_cents
 Sell-price behavior:
 
 - `print_price_per_shirt_cents` is the final customer sell price per shirt.
-- `total_price_cents` equals `price_per_shirt_cents * total_quantity`, plus
-  any size upcharges derived from `shirt_blank_size_costs.extra_cost_cents`.
-  That column stores the actual blank cost for the size, not the customer
-  upcharge.
+- Without a manual customer quote override, `total_price_cents` equals
+  `price_per_shirt_cents * total_quantity`, plus any size upcharges derived
+  from `shirt_blank_size_costs.extra_cost_cents`. That column stores the actual
+  blank cost for the size, not the customer upcharge.
 - Blank cost and print cost stay internal-only cost tracking fields.
 - Customer sale price tiers are based on the configured base pricing blank,
   default `Port and Co PC43`. If the selected blank costs more than that PC43,
@@ -74,3 +74,40 @@ Sell-price behavior:
 - Sleeve should always add $3.00 per shirt: 1 shirt at a $20.00 base is $23.00,
   4 shirts at a $15.00 base are $18.00 each, and 10 shirts at a $12.00 base are
   $15.00 each.
+
+## Pricing Safety Verification
+
+Use this case to verify landed-cost protection without changing the underlying
+DTF tier calculation:
+
+| Input | Amount |
+| --- | ---: |
+| Quantity | 10 |
+| Shirt blank cost and shipping | $65.60 |
+| DTF print cost and shipping | $58.80 |
+| Misc / packaging | $0.00 |
+| Setup / labor | $0.00 |
+| Customer price per shirt | $14.75 |
+
+Expected `pricing_safety` values:
+
+| Result | Expected |
+| --- | ---: |
+| Total landed cost | $124.40 |
+| Landed cost per shirt | $12.44 |
+| Customer quoted total | $147.50 |
+| Gross profit | $23.10 |
+| Gross profit per shirt | $2.31 |
+| Gross margin | 15.66% |
+| Target gross margin | 40% |
+| Minimum profit per shirt | $7.00 |
+| Margin-based price | $20.74 |
+| Profit-floor price | $19.44 |
+| Recommended price | $21.00 |
+| Recommended total | $210.00 |
+| Recommended gross profit | $85.60 |
+| Margin status | Too Low |
+
+The calculator must still return the existing tier-derived customer total when
+all `pricing_safety` inputs are omitted. A manual customer price is allowed to
+remain below the recommendation, but `low_margin_warning` must be `true`.

@@ -67,6 +67,36 @@ function formatMoney(cents) {
   }).format((Number(cents) || 0) / 100);
 }
 
+function dollarsToOptionalCents(value) {
+  const normalized = String(value ?? "").trim();
+
+  if (!normalized) {
+    return null;
+  }
+
+  const amount = Number(normalized);
+  return Number.isFinite(amount) ? Math.max(0, Math.round(amount * 100)) : null;
+}
+
+function centsToDollarInput(cents) {
+  const amount = Number(cents);
+  return Number.isFinite(amount) && amount > 0 ? (amount / 100).toFixed(2) : "";
+}
+
+function formatBasisPoints(basisPoints) {
+  return `${((Number(basisPoints) || 0) / 100).toFixed(1)}%`;
+}
+
+function formatMarginStatus(status) {
+  const labels = {
+    healthy: "Healthy",
+    tight: "Tight",
+    too_low: "Too Low",
+  };
+
+  return labels[status] || "Not calculated";
+}
+
 function getFinalAveragePerShirtCents(source) {
   const totalQuantity = Number(source?.total_quantity) || 0;
 
@@ -285,6 +315,18 @@ function getQuotePayload() {
     customer_phone: String(formData.get("customer_phone") || "").trim(),
     due_date: String(formData.get("due_date") || "").trim(),
     notes: String(formData.get("notes") || "").trim(),
+    pricing_safety: {
+      shirt_blank_cost_cents: dollarsToOptionalCents(formData.get("shirt_blank_cost")),
+      shirt_shipping_cents: dollarsToOptionalCents(formData.get("shirt_shipping")),
+      dtf_print_cost_cents: dollarsToOptionalCents(formData.get("dtf_print_cost")),
+      dtf_shipping_cents: dollarsToOptionalCents(formData.get("dtf_shipping")),
+      misc_cost_cents: dollarsToOptionalCents(formData.get("misc_cost")),
+      setup_labor_cost_cents: dollarsToOptionalCents(formData.get("setup_labor_cost")),
+      quoted_price_per_shirt_cents: dollarsToOptionalCents(
+        formData.get("quoted_price_per_shirt")
+      ),
+      quoted_total_cents: dollarsToOptionalCents(formData.get("quoted_total")),
+    },
     item: {
       shirt_blank_id: Number(formData.get("shirt_blank_id") || 0),
       color: String(formData.get("color") || "").trim(),
@@ -353,6 +395,7 @@ function renderCalculation(calculation) {
     Number(totals.size_upcharge_cents) ||
     Number(pricingDebug.sizeUpchargeCents) ||
     0;
+  const safety = totals.pricing_safety || item.pricing_safety || {};
   const finalAveragePerShirtCents = getFinalAveragePerShirtCents(totals);
   const dealRows = [
     pricingLabel
@@ -375,21 +418,64 @@ function renderCalculation(calculation) {
       ? renderQuoteTotalRow("Size Upcharges", formatMoney(sizeUpchargeCents))
       : "",
   ].join("");
+  const marginStatus = String(safety.margin_status || "");
+  const safetySummary = safety.total_landed_cost_cents != null
+    ? `
+      ${
+        safety.low_margin_warning
+          ? `
+            <section class="pricing-warning" role="alert">
+              <h3>Low Margin Warning</h3>
+              ${renderQuoteTotalRow("Current Price / Shirt", formatMoney(safety.quoted_price_per_shirt_cents))}
+              ${renderQuoteTotalRow("Recommended Price / Shirt", formatMoney(safety.recommended_price_per_shirt_cents))}
+              ${renderQuoteTotalRow("Current Gross Margin", formatBasisPoints(safety.gross_margin_basis_points))}
+              ${renderQuoteTotalRow("Required Gross Margin", formatBasisPoints(safety.target_margin_basis_points))}
+              ${renderQuoteTotalRow("Current Gross Profit", formatMoney(safety.gross_profit_cents))}
+              ${renderQuoteTotalRow("Recommended Gross Profit", formatMoney(safety.recommended_profit_cents))}
+              ${renderQuoteTotalRow("Recommended Total Quote", formatMoney(safety.recommended_total_cents))}
+            </section>
+          `
+          : ""
+      }
+      <section class="pricing-safety-summary margin-${escapeHtml(marginStatus)}">
+        <div class="pricing-safety-heading">
+          <h3>Pricing Safety</h3>
+          <span class="margin-status">${escapeHtml(formatMarginStatus(marginStatus))}</span>
+        </div>
+        <div class="pricing-safety-metrics">
+          <div><span>Cost / Shirt</span><strong>${formatMoney(safety.landed_cost_per_shirt_cents)}</strong></div>
+          <div><span>Profit / Shirt</span><strong>${formatMoney(safety.gross_profit_per_shirt_cents)}</strong></div>
+          <div><span>Recommended Price</span><strong>${formatMoney(safety.recommended_price_per_shirt_cents)}</strong></div>
+          <div><span>Recommended Total</span><strong>${formatMoney(safety.recommended_total_cents)}</strong></div>
+        </div>
+        ${renderQuoteTotalRow("Total Landed Cost", formatMoney(safety.total_landed_cost_cents))}
+        ${renderQuoteTotalRow("Customer Quoted Total", formatMoney(safety.quoted_total_cents))}
+        ${renderQuoteTotalRow("Gross Profit", formatMoney(safety.gross_profit_cents))}
+        ${renderQuoteTotalRow("Gross Margin", formatBasisPoints(safety.gross_margin_basis_points))}
+        ${renderQuoteTotalRow("Target Margin", formatBasisPoints(safety.target_margin_basis_points))}
+        ${renderQuoteTotalRow("Minimum Profit / Shirt", formatMoney(safety.minimum_profit_per_shirt_cents))}
+        ${renderQuoteTotalRow("Margin-Based Price", formatMoney(safety.margin_price_per_shirt_cents))}
+        ${renderQuoteTotalRow("Profit-Floor Price", formatMoney(safety.profit_price_per_shirt_cents))}
+        ${renderQuoteTotalRow("Recommended Gross Profit", formatMoney(safety.recommended_profit_cents))}
+        ${renderQuoteTotalRow("Recommended Margin", formatBasisPoints(safety.recommended_margin_basis_points))}
+      </section>
+    `
+    : "";
 
   quoteSummaryContent.innerHTML = `
     ${renderQuoteTotalRow("Blank", item.blank_label)}
     ${renderQuoteTotalRow("Total Qty", totals.total_quantity)}
     ${dealRows}
     ${renderQuoteTotalRow("Per Shirt", formatMoney(finalAveragePerShirtCents))}
-    ${renderQuoteTotalRow("Blank Cost", formatMoney(totals.blank_cost_cents))}
-    ${renderQuoteTotalRow("Print Cost", formatMoney(totals.print_cost_cents))}
-    ${renderQuoteTotalRow("Setup Fees", formatMoney(totals.setup_fee_cents))}
-    ${renderQuoteTotalRow("Profit", formatMoney(totals.profit_cents))}
     ${renderQuoteTotalRow(
       "Final Quote Total",
       formatMoney(totals.total_price_cents),
       "quote-grand-total"
     )}
+    ${safetySummary}
+    ${renderQuoteTotalRow("Calculated Blank Cost", formatMoney(totals.blank_cost_cents))}
+    ${renderQuoteTotalRow("Calculated Print Cost", formatMoney(totals.print_cost_cents))}
+    ${renderQuoteTotalRow("Calculated Setup Fees", formatMoney(totals.setup_fee_cents))}
   `;
 
   updateMobileQuoteBar();
@@ -641,6 +727,26 @@ async function editQuoteDraft(quoteId) {
     setFormValue("color", item.color);
     setFormValue("print_type", item.print_type);
 
+    if (Number(quote.total_landed_cost_cents) > 0) {
+      setFormValue(
+        "shirt_blank_cost",
+        centsToDollarInput(quote.landed_shirt_blank_cost_cents)
+      );
+      setFormValue("shirt_shipping", centsToDollarInput(quote.shirt_shipping_cents));
+      setFormValue(
+        "dtf_print_cost",
+        centsToDollarInput(quote.landed_dtf_print_cost_cents)
+      );
+      setFormValue("dtf_shipping", centsToDollarInput(quote.dtf_shipping_cents));
+      setFormValue("misc_cost", centsToDollarInput(quote.misc_cost_cents));
+      setFormValue(
+        "setup_labor_cost",
+        centsToDollarInput(quote.setup_labor_cost_cents)
+      );
+      setFormValue("quoted_price_per_shirt", "");
+      setFormValue("quoted_total", centsToDollarInput(quote.total_price_cents));
+    }
+
     const placements = item.placements || [];
     isSleeveSelected = placements.includes("sleeve");
     syncSleeveToggleUi();
@@ -705,6 +811,50 @@ async function convertQuoteToOrder(quoteId, button) {
       button.textContent = "Convert";
     }
   }
+}
+
+function renderSavedPricingSafety(quote) {
+  if (Number(quote.total_landed_cost_cents) <= 0) {
+    return "";
+  }
+
+  const status = String(quote.margin_status || "");
+  const currentPricePerShirtCents = getFinalAveragePerShirtCents(quote);
+  const isLowMargin =
+    currentPricePerShirtCents < Number(quote.recommended_price_per_shirt_cents);
+
+  return `
+    ${
+      isLowMargin
+        ? `
+          <section class="pricing-warning" role="alert">
+            <h3>Low Margin Warning</h3>
+            ${renderQuoteTotalRow("Current Price / Shirt", formatMoney(currentPricePerShirtCents))}
+            ${renderQuoteTotalRow("Recommended Price / Shirt", formatMoney(quote.recommended_price_per_shirt_cents))}
+            ${renderQuoteTotalRow("Current Gross Margin", formatBasisPoints(quote.gross_margin_basis_points))}
+            ${renderQuoteTotalRow("Required Gross Margin", formatBasisPoints(quote.target_margin_basis_points))}
+            ${renderQuoteTotalRow("Current Gross Profit", formatMoney(quote.profit_cents))}
+            ${renderQuoteTotalRow("Recommended Gross Profit", formatMoney(quote.recommended_profit_cents))}
+            ${renderQuoteTotalRow("Recommended Total Quote", formatMoney(quote.recommended_total_cents))}
+          </section>
+        `
+        : ""
+    }
+    <section class="pricing-safety-summary margin-${escapeHtml(status)}">
+      <div class="pricing-safety-heading">
+        <h3>Pricing Safety</h3>
+        <span class="margin-status">${escapeHtml(formatMarginStatus(status))}</span>
+      </div>
+      ${renderQuoteTotalRow("Total Landed Cost", formatMoney(quote.total_landed_cost_cents))}
+      ${renderQuoteTotalRow("Cost / Shirt", formatMoney(quote.landed_cost_per_shirt_cents))}
+      ${renderQuoteTotalRow("Profit / Shirt", formatMoney(quote.gross_profit_per_shirt_cents))}
+      ${renderQuoteTotalRow("Gross Margin", formatBasisPoints(quote.gross_margin_basis_points))}
+      ${renderQuoteTotalRow("Recommended Price", formatMoney(quote.recommended_price_per_shirt_cents))}
+      ${renderQuoteTotalRow("Recommended Total", formatMoney(quote.recommended_total_cents))}
+      ${renderQuoteTotalRow("Recommended Profit", formatMoney(quote.recommended_profit_cents))}
+      ${renderQuoteTotalRow("Recommended Margin", formatBasisPoints(quote.recommended_margin_basis_points))}
+    </section>
+  `;
 }
 
 function renderQuoteDetail(quote) {
@@ -792,6 +942,8 @@ function renderQuoteDetail(quote) {
       <strong>Total Quote</strong>
       <span>${formatMoney(quote.total_price_cents)}</span>
     </div>
+
+    ${renderSavedPricingSafety(quote)}
 
     <div class="quote-detail-sizes">
       ${sizeRows || `<p class="quote-muted">No sizes saved.</p>`}
@@ -1020,7 +1172,21 @@ quoteForm?.addEventListener("input", (event) => {
     "shirt_blank_id",
     "color",
     "print_type",
+    "shirt_blank_cost",
+    "shirt_shipping",
+    "dtf_print_cost",
+    "dtf_shipping",
+    "misc_cost",
+    "setup_labor_cost",
+    "quoted_price_per_shirt",
+    "quoted_total",
   ]);
+
+  if (target?.name === "quoted_price_per_shirt" && target.value !== "") {
+    setFormValue("quoted_total", "");
+  } else if (target?.name === "quoted_total" && target.value !== "") {
+    setFormValue("quoted_price_per_shirt", "");
+  }
 
   if (pricingFieldNames.has(target?.name) || target?.dataset?.size) {
     invalidateCalculation();

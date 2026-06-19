@@ -92,6 +92,55 @@
             <div class="size-grid" id="size-grid"></div>
           </div>
 
+          <div class="quote-section">
+            <div class="quote-section-heading-row">
+              <h3>Pricing Safety</h3>
+              <span class="quote-count-pill">Order totals</span>
+            </div>
+
+            <div class="quote-grid pricing-safety-inputs">
+              <label class="quote-field">
+                <span>Shirt Blank Cost</span>
+                <input type="number" id="shirt_blank_cost" name="shirt_blank_cost" min="0" step="0.01" inputmode="decimal" placeholder="Calculated cost" />
+              </label>
+
+              <label class="quote-field">
+                <span>Shirt Shipping</span>
+                <input type="number" id="shirt_shipping" name="shirt_shipping" min="0" step="0.01" inputmode="decimal" placeholder="0.00" />
+              </label>
+
+              <label class="quote-field">
+                <span>DTF Print Cost</span>
+                <input type="number" id="dtf_print_cost" name="dtf_print_cost" min="0" step="0.01" inputmode="decimal" placeholder="Calculated cost" />
+              </label>
+
+              <label class="quote-field">
+                <span>DTF Shipping</span>
+                <input type="number" id="dtf_shipping" name="dtf_shipping" min="0" step="0.01" inputmode="decimal" placeholder="0.00" />
+              </label>
+
+              <label class="quote-field">
+                <span>Misc / Packaging Cost</span>
+                <input type="number" id="misc_cost" name="misc_cost" min="0" step="0.01" inputmode="decimal" placeholder="0.00" />
+              </label>
+
+              <label class="quote-field">
+                <span>Setup / Labor Cost</span>
+                <input type="number" id="setup_labor_cost" name="setup_labor_cost" min="0" step="0.01" inputmode="decimal" placeholder="Calculated setup" />
+              </label>
+
+              <label class="quote-field">
+                <span>Customer Price / Shirt</span>
+                <input type="number" id="quoted_price_per_shirt" name="quoted_price_per_shirt" min="0" step="0.01" inputmode="decimal" placeholder="Tier price" />
+              </label>
+
+              <label class="quote-field">
+                <span>Customer Quoted Total</span>
+                <input type="number" id="quoted_total" name="quoted_total" min="0" step="0.01" inputmode="decimal" placeholder="Calculated total" />
+              </label>
+            </div>
+          </div>
+
           <div id="quote-error" class="quote-error" role="alert" hidden></div>
 
           <div class="quote-actions">
