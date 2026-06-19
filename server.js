@@ -1372,7 +1372,9 @@ function calculateProfitProtectionMetrics({
   const grossProfitPerShirtCents = Math.round(grossProfitCents / totalQuantity);
   const grossMargin = quotedTotalCents > 0 ? grossProfitCents / quotedTotalCents : 0;
   const grossMarginBasisPoints = Math.round(grossMargin * 10000);
+  const grossMarginPercent = Math.round(grossMargin * 10000) / 100;
   const targetMarginBasisPoints = tier.target_margin_basis_points;
+  const targetGrossMarginPercent = targetMarginBasisPoints / 100;
   const targetMargin = targetMarginBasisPoints / 10000;
   const minimumProfitPerShirtCents = tier.minimum_profit_cents;
   const marginPricePerShirtCents = Math.ceil(
@@ -1401,17 +1403,24 @@ function calculateProfitProtectionMetrics({
     total_landed_cost_cents: totalLandedCostCents,
     landed_cost_per_shirt_cents: landedCostPerShirtCents,
     quoted_total_cents: quotedTotalCents,
+    customer_quoted_total_cents: quotedTotalCents,
     quoted_price_per_shirt_cents: quotedPricePerShirtCents,
     gross_profit_cents: grossProfitCents,
     gross_profit_per_shirt_cents: grossProfitPerShirtCents,
     gross_margin_basis_points: grossMarginBasisPoints,
+    gross_margin_percent: grossMarginPercent,
     target_margin_basis_points: targetMarginBasisPoints,
+    target_gross_margin_percent: targetGrossMarginPercent,
     minimum_profit_per_shirt_cents: minimumProfitPerShirtCents,
     margin_price_per_shirt_cents: marginPricePerShirtCents,
+    margin_based_price_cents: marginPricePerShirtCents,
     profit_price_per_shirt_cents: profitPricePerShirtCents,
+    profit_floor_price_cents: profitPricePerShirtCents,
     recommended_price_per_shirt_cents: recommendedPricePerShirtCents,
+    recommended_price_cents: recommendedPricePerShirtCents,
     recommended_total_cents: recommendedTotalCents,
     recommended_profit_cents: recommendedProfitCents,
+    recommended_gross_profit_cents: recommendedProfitCents,
     recommended_margin_basis_points: recommendedMarginBasisPoints,
     margin_status: marginStatus,
     low_margin_warning: quotedPricePerShirtCents < recommendedPricePerShirtCents,

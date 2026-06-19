@@ -136,3 +136,38 @@ Expected source comparison:
 Changing the selected source must update the actual
 `pricing_safety.dtf_print_cost_cents`, not only the comparison values. A custom
 per-shirt override must take precedence over the selected source default.
+
+## API Verification Fields
+
+The `/api/quotes/calculate` response preserves the tier and add-on debug fields
+and exposes pricing-safety values with these verification names:
+
+```text
+item.placement_breakdown[0].rule_id
+item.placement_breakdown[0].print_price_per_shirt_cents
+pricing_debug.basePricePerShirtCents
+pricing_debug.sleeveAddOnPricePerShirtCents
+pricing_debug.blankUpgradePerShirtCents
+pricing_debug.sizeUpchargeTotalCents
+pricing_safety.total_landed_cost_cents
+pricing_safety.landed_cost_per_shirt_cents
+pricing_safety.customer_quoted_total_cents
+pricing_safety.gross_profit_cents
+pricing_safety.gross_profit_per_shirt_cents
+pricing_safety.gross_margin_percent
+pricing_safety.target_gross_margin_percent
+pricing_safety.minimum_profit_per_shirt_cents
+pricing_safety.margin_based_price_cents
+pricing_safety.profit_floor_price_cents
+pricing_safety.recommended_price_cents
+pricing_safety.recommended_total_cents
+pricing_safety.recommended_gross_profit_cents
+pricing_safety.margin_status
+pricing_safety.low_margin_warning
+pricing_safety.dtf_source
+pricing_safety.dtf_print_cost_cents
+pricing_safety.dtf_source_comparison
+```
+
+The older internal names remain available so saved quotes and the current quote
+UI do not need a breaking response migration.
