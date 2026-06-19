@@ -366,6 +366,42 @@
   padding-bottom: 0.25rem;
 }
 
+.customer-price-card {
+  border-top: 5px solid var(--brand-blue);
+  background: var(--surface-muted);
+  padding: 1rem;
+}
+
+.customer-price-heading span,
+.customer-price-heading strong {
+  display: block;
+}
+
+.customer-price-heading span {
+  color: var(--text-soft);
+  font-size: 0.82rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.customer-price-heading strong {
+  margin-top: 0.25rem;
+  color: var(--text);
+  font-size: 1.5rem;
+}
+
+.customer-upgrade-breakdown {
+  margin-top: 0.65rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.customer-upgrade-breakdown h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
 .recommended-price-card {
   border-top: 5px solid var(--brand-blue);
   background: var(--surface-muted);

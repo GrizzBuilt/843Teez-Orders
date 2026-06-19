@@ -453,8 +453,6 @@ function renderCalculation(calculation) {
   const sleeveAddOnPerShirtCents =
     Number(pricingDebug.sleeveAddOnPerShirtCents) ||
     Number(pricingDebug.sleeveAddOnPricePerShirtCents) || 0;
-  const blankUpgradePerShirtCents =
-    Number(pricingDebug.blankUpgradePerShirtCents) || 0;
   const baseDealSubtotalCents =
     Number(totals.base_deal_subtotal_cents) ||
     Number(pricingDebug.baseDealSubtotalCents) ||
@@ -467,14 +465,22 @@ function renderCalculation(calculation) {
     Number(totals.blank_upgrade_total_cents) ||
     Number(pricingDebug.blankUpgradeTotalCents) ||
     0;
-  const sizeUpchargeCents =
-    Number(totals.size_upcharge_total_cents) ||
-    Number(pricingDebug.sizeUpchargeTotalCents) ||
-    Number(totals.size_upcharge_cents) ||
-    Number(pricingDebug.sizeUpchargeCents) ||
-    0;
+  const customerBlankUpgradeTotalCents =
+    Number(totals.customer_blank_upgrade_total_cents) ||
+    Number(pricingDebug.customerBlankUpgradeTotalCents) ||
+    blankUpgradeTotalCents;
   const safety = totals.pricing_safety || item.pricing_safety || {};
-  const finalAveragePerShirtCents = getFinalAveragePerShirtCents(totals);
+  const sizeUpgradeRows = (item.sizes || [])
+    .filter((size) => Number(size.customer_blank_upgrade_total_cents) > 0)
+    .map((size) =>
+      renderQuoteTotalRow(
+        Number(size.quantity) > 1
+          ? `${size.size_label} (${size.quantity})`
+          : size.size_label,
+        `+${formatMoney(size.customer_blank_upgrade_total_cents)}`
+      )
+    )
+    .join("");
   const dealRows = [
     pricingLabel
       ? renderQuoteTotalRow("Pricing Deal", pricingLabel)
@@ -486,20 +492,14 @@ function renderCalculation(calculation) {
           `+${formatMoney(sleeveAddOnPerShirtCents)} each (${formatMoney(sleeveAddOnTotalCents)})`
         )
       : "",
-    blankUpgradeTotalCents > 0
+    customerBlankUpgradeTotalCents > 0
       ? renderQuoteTotalRow(
-          "Blank Upgrade",
-          `+${formatMoney(blankUpgradePerShirtCents)} each (${formatMoney(blankUpgradeTotalCents)})`
+          "Size / Blank Upgrades",
+          `+${formatMoney(customerBlankUpgradeTotalCents)}`
         )
-      : "",
-    sizeUpchargeCents > 0
-      ? renderQuoteTotalRow("Size Upcharges", formatMoney(sizeUpchargeCents))
       : "",
   ].join("");
   const marginStatus = String(safety.margin_status || "");
-  const hasManualOverride =
-    safety.total_landed_cost_cents != null &&
-    Number(safety.quoted_total_cents) !== Number(safety.recommended_total_cents);
   const placementRows = Array.isArray(item.placement_breakdown)
     ? item.placement_breakdown
         .map((placement) =>
@@ -514,7 +514,7 @@ function renderCalculation(calculation) {
     ? `
       <section class="pricing-warning" role="alert">
         <h3>Low Margin Warning</h3>
-        <p>Your manual price is below the protected recommendation.</p>
+        <p>The final customer price is below the protected recommendation.</p>
         ${renderQuoteTotalRow("Your Price / Shirt", formatMoney(safety.quoted_price_per_shirt_cents))}
         ${renderQuoteTotalRow("Recommended Price", formatMoney(safety.recommended_price_per_shirt_cents))}
         ${renderQuoteTotalRow("Current Margin", formatBasisPoints(safety.gross_margin_basis_points))}
@@ -555,6 +555,24 @@ function renderCalculation(calculation) {
     : "";
 
   quoteSummaryContent.innerHTML = `
+    <section class="customer-price-card">
+      <div class="customer-price-heading">
+        <span>Customer Price</span>
+        <strong>${escapeHtml(pricingLabel || formatMoney(baseDealSubtotalCents))}</strong>
+      </div>
+      ${renderQuoteTotalRow("Base Tier Price", formatMoney(baseDealSubtotalCents))}
+      ${
+        customerBlankUpgradeTotalCents > 0
+          ? `<div class="customer-upgrade-breakdown"><h3>Size / Blank Upgrades</h3>${sizeUpgradeRows || renderQuoteTotalRow("Blank Upgrade", `+${formatMoney(customerBlankUpgradeTotalCents)}`)}</div>`
+          : ""
+      }
+      ${
+        sleeveAddOnTotalCents > 0
+          ? renderQuoteTotalRow("Sleeve Add-On", `+${formatMoney(sleeveAddOnTotalCents)}`)
+          : ""
+      }
+      ${renderQuoteTotalRow("Final Quote", formatMoney(totals.total_price_cents), "quote-grand-total")}
+    </section>
     <section class="recommended-price-card margin-${escapeHtml(marginStatus)}">
       <div class="recommended-price-heading">
         <span>Recommended Price</span>
@@ -571,8 +589,6 @@ function renderCalculation(calculation) {
         <strong class="margin-status">${escapeHtml(formatMarginStatus(marginStatus))}</strong>
       </div>
     </section>
-    ${hasManualOverride ? renderQuoteTotalRow("Your Customer Price", `${formatMoney(finalAveragePerShirtCents)} each`) : ""}
-    ${renderQuoteTotalRow("Quote Total", formatMoney(totals.total_price_cents), "quote-grand-total")}
     ${warning}
     ${advancedResults}
   `;

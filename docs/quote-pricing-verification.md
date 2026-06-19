@@ -8,7 +8,7 @@ Example tier setup for one placement:
 | --- | --- | ---: | ---: | ---: |
 | DTF | full_front | 1 | 1 | 2000 |
 | DTF | full_front | 2 | 2 | 1750 |
-| DTF | full_front | 3 | 3 | 1600 |
+| DTF | full_front | 3 | 3 | 1667 |
 | DTF | full_front | 4 | 4 | 1500 |
 | DTF | full_front | 5 | 9 | 1400 |
 | DTF | full_front | 10 | 24 | 1200 |
@@ -39,9 +39,12 @@ Sell-price behavior:
 
 - `print_price_per_shirt_cents` remains the matched tier price and is preserved
   in the pricing debug response.
-- Without a manual customer quote override, `total_price_cents` uses the
-  recommended protected price. The tier-derived total remains available as
-  `pricing_debug.calculatedTotalPriceCents` for verification.
+- For quantities 1-4, the tier-derived bundle total is the customer quote by
+  default: $20, $35, $50, and $60 respectively. The three-shirt rule stores an
+  approximate per-shirt value of 1667 cents and rounds its bundle subtotal to
+  $50.00.
+- The protected recommended price remains active as a comparison. A small
+  bundle below that recommendation is allowed and returns a margin warning.
 - Size upcharges are added to the recommended total. The
   `shirt_blank_size_costs.extra_cost_cents` column stores actual blank cost for
   the size, not the customer upcharge.
@@ -57,10 +60,10 @@ Sell-price behavior:
 - A quote with a $12.00 base tier, PC43 at $2.04, and selected blank at $4.25
   should return `blankUpgradePerShirtCents = 221` and
   `price_per_shirt_cents = 1421` before sleeve.
-- Size upcharges are calculated from actual blank costs by size. If PC43 base
-  cost is 204 cents and PC43 2XL actual cost is 318 cents, the 2XL customer
-  upcharge is 114 cents per shirt. Two 2XL shirts should return
-  `size_upcharge_total_cents = 228` and internal blank cost of 636 cents.
+- Size and blank upgrades are calculated per size line against the PC43 base
+  cost of 204 cents. If PC43 2XL actual cost is 318 cents, the customer upgrade
+  is 114 cents per shirt. Two 2XL shirts return a combined customer blank
+  upgrade of 228 cents and internal blank cost of 636 cents.
 - The seeded PC43 actual size costs are per-shirt values: S-XL are 204 cents,
   2XL is 318 cents, and 3XL through 6XL are 419 cents.
 - Sleeve is treated as an add-on. When sleeve is selected, it does not drive the
@@ -113,9 +116,10 @@ Expected `pricing_safety` values:
 | Recommended gross profit | $85.60 |
 | Margin status | Too Low |
 
-When no manual customer price is supplied, the calculator uses the recommended
-price as the quote total. A manual customer price is allowed to remain below
-the recommendation, but `low_margin_warning` must be `true`.
+For quantities above four, no manual customer price uses the protected
+recommendation as the quote total. For quantities one through four, the bundle
+price plus blank/size upgrades remains the customer total. A lower customer
+price is allowed, but `low_margin_warning` must be `true`.
 
 ## Recommended Price Workflow
 

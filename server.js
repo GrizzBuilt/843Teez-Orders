@@ -152,7 +152,7 @@ function seedDtfVolumePricingRules() {
   const dtfSaleTiers = [
     [1, 1, 2000],
     [2, 2, 1750],
-    [3, 3, 1600],
+    [3, 3, 1667],
     [4, 4, 1500],
     [5, 9, 1400],
     [10, 24, 1200],
@@ -300,7 +300,7 @@ function ensureDtfVolumePricingRules() {
         AND (
           (min_quantity = 1 AND max_quantity = 1 AND print_price_per_shirt_cents = 2000)
           OR (min_quantity = 2 AND max_quantity = 2 AND print_price_per_shirt_cents = 1750)
-          OR (min_quantity = 3 AND max_quantity = 3 AND print_price_per_shirt_cents = 1600)
+          OR (min_quantity = 3 AND max_quantity = 3 AND print_price_per_shirt_cents = 1667)
           OR (min_quantity = 4 AND max_quantity = 4 AND print_price_per_shirt_cents = 1500)
           OR (min_quantity = 5 AND max_quantity = 9 AND print_price_per_shirt_cents = 1400)
           OR (min_quantity = 10 AND max_quantity = 24 AND print_price_per_shirt_cents = 1200)
@@ -1443,6 +1443,7 @@ function calculateQuotePricingSafety({
   printType,
   sizeUpchargeTotalCents,
   internalAddOnCostCents,
+  calculatedTotalPriceCents,
 }) {
   const safetyInput = input?.pricing_safety && typeof input.pricing_safety === "object"
     ? input.pricing_safety
@@ -1507,6 +1508,8 @@ function calculateQuotePricingSafety({
     (quotedPricePerShirtOverrideCents == null
       ? null
       : quotedPricePerShirtOverrideCents * totalQuantity + sizeUpchargeTotalCents);
+  const quotedTotalCents = manualQuotedTotalCents ??
+    (totalQuantity <= 4 ? calculatedTotalPriceCents : null);
   const totalLandedCostCents =
     landedShirtBlankCostCents +
     shirtShippingCents +
@@ -1518,7 +1521,7 @@ function calculateQuotePricingSafety({
   const metrics = calculateProfitProtectionMetrics({
     totalQuantity,
     totalLandedCostCents,
-    quotedTotalCents: manualQuotedTotalCents,
+    quotedTotalCents,
     tier,
     sizeUpchargeTotalCents,
   });
@@ -1667,11 +1670,29 @@ function buildPricingLabel(rule, totalQuantity) {
     minQuantity === quantity &&
     maxQuantity === quantity
   ) {
-    return `${quantity} for ${formatCentsCompact(pricePerShirtCents * quantity)}`;
+    return `${quantity} for ${formatCentsCompact(calculateBaseTierSubtotalCents(rule, quantity))}`;
   }
 
   const shirtLabel = quantity === 1 ? "shirt" : "shirts";
   return `${quantity} ${shirtLabel} at ${formatCentsCompact(pricePerShirtCents)} each`;
+}
+
+function calculateBaseTierSubtotalCents(rule, totalQuantity) {
+  const quantity = Number(totalQuantity) || 0;
+  const pricePerShirtCents = normalizeMoneyCents(
+    rule?.print_price_per_shirt_cents
+  );
+  const subtotalCents = pricePerShirtCents * quantity;
+  const isExactSmallQuantityTier =
+    quantity >= 1 &&
+    quantity <= 4 &&
+    Number(rule?.min_quantity) === quantity &&
+    Number(rule?.max_quantity) === quantity;
+
+  // Three shirts at $16.67 each lands one cent high; bundle totals stay on $0.50.
+  return isExactSmallQuantityTier
+    ? Math.round(subtotalCents / 50) * 50
+    : subtotalCents;
 }
 
 function getPlacementLabels(placements) {
@@ -1940,11 +1961,14 @@ async function calculateQuote(input) {
     const sizeActualCostCents = sizeCost?.actual_cost_cents > 0
       ? sizeCost.actual_cost_cents
       : selectedBlankBaseCostCents;
-    const sizeAdjustmentPerShirtCents = Math.max(
-      0,
-      sizeActualCostCents - selectedBlankBaseCostCents
-    );
+    const customerBlankUpgradePerShirtCents = ALLOW_BLANK_PRICE_REDUCTION
+      ? sizeActualCostCents - basePricingBlankCostCents
+      : Math.max(0, sizeActualCostCents - basePricingBlankCostCents);
+    const sizeAdjustmentPerShirtCents =
+      customerBlankUpgradePerShirtCents - blankUpgradePerShirtCents;
     const lineSizeUpchargeCents = sizeAdjustmentPerShirtCents * size.quantity;
+    const lineCustomerBlankUpgradeCents =
+      customerBlankUpgradePerShirtCents * size.quantity;
     const lineCostCents = sizeActualCostCents * size.quantity;
 
     sizeActualCosts[size.size_label] = sizeActualCostCents;
@@ -1959,10 +1983,16 @@ async function calculateQuote(input) {
       size_adjustment_per_shirt_cents: sizeAdjustmentPerShirtCents,
       size_upcharge_cents: sizeAdjustmentPerShirtCents,
       size_upcharge_total_cents: lineSizeUpchargeCents,
+      customer_blank_upgrade_per_shirt_cents: customerBlankUpgradePerShirtCents,
+      customer_blank_upgrade_total_cents: lineCustomerBlankUpgradeCents,
     };
   });
   const sizeUpchargeTotalCents = calculatedSizes.reduce(
     (sum, size) => sum + size.size_upcharge_cents * size.quantity,
+    0
+  );
+  const customerBlankUpgradeTotalCents = calculatedSizes.reduce(
+    (sum, size) => sum + size.customer_blank_upgrade_total_cents,
     0
   );
 
@@ -2098,13 +2128,15 @@ async function calculateQuote(input) {
     blankUpgradePerShirtCents +
     sleeveAddOnPerShirtCents;
   const pricingLabel = buildPricingLabel(selectedPriceRule, totalQuantity);
-  const baseSubtotalCents = basePricePerShirtCents * totalQuantity;
+  const baseSubtotalCents = calculateBaseTierSubtotalCents(
+    selectedPriceRule,
+    totalQuantity
+  );
   const baseDealSubtotalCents = baseSubtotalCents;
   const blankUpgradeTotalCents = blankUpgradePerShirtCents * totalQuantity;
   const calculatedTotalPriceCents =
     baseSubtotalCents +
-    blankUpgradeTotalCents +
-    sizeUpchargeTotalCents +
+    customerBlankUpgradeTotalCents +
     sleeveAddOnTotalCents;
   const pricingSafety = calculateQuotePricingSafety({
     input,
@@ -2113,8 +2145,9 @@ async function calculateQuote(input) {
     calculatedPrintCostCents: printCostCents,
     calculatedSetupFeeCents: setupFeeCents,
     printType,
-    sizeUpchargeTotalCents,
+    sizeUpchargeTotalCents: customerBlankUpgradeTotalCents,
     internalAddOnCostCents,
+    calculatedTotalPriceCents,
   });
   const totalPriceCents = pricingSafety.quoted_total_cents;
   const profitCents = pricingSafety.gross_profit_cents;
@@ -2123,6 +2156,7 @@ async function calculateQuote(input) {
     calculatedSizes,
     sizeActualCosts,
     sizeUpchargeTotalCents,
+    customerBlankUpgradeTotalCents,
     sleeveAddOnPerShirtCents,
     sleeveAddOnTotalCents,
     totalQuantity,
@@ -2148,6 +2182,7 @@ async function calculateQuote(input) {
     baseSubtotalCents,
     baseDealSubtotalCents,
     blankUpgradeTotalCents,
+    customerBlankUpgradeTotalCents,
     sleeveAddOnTotalCents,
     sizeActualCosts,
     sizeUpchargeTotalCents,
@@ -2183,6 +2218,7 @@ async function calculateQuote(input) {
       pricing_label: pricingLabel,
       base_deal_subtotal_cents: baseDealSubtotalCents,
       blank_upgrade_total_cents: blankUpgradeTotalCents,
+      customer_blank_upgrade_total_cents: customerBlankUpgradeTotalCents,
       sleeve_add_on_total_cents: sleeveAddOnTotalCents,
       size_upcharge_total_cents: sizeUpchargeTotalCents,
       size_upcharge_cents: sizeUpchargeTotalCents,
@@ -2200,6 +2236,7 @@ async function calculateQuote(input) {
       pricing_label: pricingLabel,
       base_deal_subtotal_cents: baseDealSubtotalCents,
       blank_upgrade_total_cents: blankUpgradeTotalCents,
+      customer_blank_upgrade_total_cents: customerBlankUpgradeTotalCents,
       sleeve_add_on_total_cents: sleeveAddOnTotalCents,
       size_upcharge_total_cents: sizeUpchargeTotalCents,
       size_upcharge_cents: sizeUpchargeTotalCents,
