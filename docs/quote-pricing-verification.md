@@ -84,7 +84,9 @@ DTF tier calculation:
 | --- | ---: |
 | Quantity | 10 |
 | Shirt blank cost and shipping | $65.60 |
-| DTF print cost and shipping | $58.80 |
+| DTF source | Manual custom cost |
+| DTF cost per shirt | $5.88 |
+| DTF shipping | $0.00 |
 | Misc / packaging | $0.00 |
 | Setup / labor | $0.00 |
 | Customer price per shirt | $14.75 |
@@ -111,3 +113,26 @@ Expected `pricing_safety` values:
 The calculator must still return the existing tier-derived customer total when
 all `pricing_safety` inputs are omitted. A manual customer price is allowed to
 remain below the recommendation, but `low_margin_warning` must be `true`.
+
+## DTF Source Comparison Verification
+
+Use 10 shirts, $65.60 in shirt blank cost with shipping, a $14.75 customer
+price per shirt, and no misc or setup/labor cost.
+
+Expected source comparison:
+
+| Result | In-house DTF | Outsourced DTF |
+| --- | ---: | ---: |
+| DTF cost per shirt | $3.00 | $5.50 |
+| Total DTF cost | $30.00 | $55.00 |
+| Total landed cost | $95.60 | $120.60 |
+| Landed cost per shirt | $9.56 | $12.06 |
+| Gross profit | $51.90 | $26.90 |
+| Gross profit per shirt | $5.19 | $2.69 |
+| Gross margin | 35.19% | 18.24% |
+| Recommended price per shirt | $17.00 | $20.50 |
+| Recommended total | $170.00 | $205.00 |
+
+Changing the selected source must update the actual
+`pricing_safety.dtf_print_cost_cents`, not only the comparison values. A custom
+per-shirt override must take precedence over the selected source default.

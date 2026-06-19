@@ -42,6 +42,21 @@ const mobileQuoteEach = document.getElementById("mobile-quote-each");
 const mobileCalculateQuoteBtn = document.getElementById("mobile-calculate-quote-btn");
 const mobileSaveQuoteBtn = document.getElementById("mobile-save-quote-btn");
 const sleeveToggleCard = document.getElementById("sleeve-toggle-card");
+const dtfSourceSelect = document.getElementById("dtf_source");
+const dtfCostPerShirtInput = document.getElementById("dtf_cost_per_shirt");
+
+const DTF_SOURCE_DEFAULT_COSTS = {
+  in_house_dtf: 3,
+  outsourced_dtf: 5.5,
+  customer_supplied: 0,
+};
+
+const DTF_SOURCE_LABELS = {
+  in_house_dtf: "In-house DTF",
+  outsourced_dtf: "Outsourced DTF",
+  customer_supplied: "Customer-supplied transfers",
+  manual_custom: "Manual custom cost",
+};
 
 let isSavingQuote = false;
 let isCalculatingQuote = false;
@@ -78,9 +93,11 @@ function dollarsToOptionalCents(value) {
   return Number.isFinite(amount) ? Math.max(0, Math.round(amount * 100)) : null;
 }
 
-function centsToDollarInput(cents) {
+function centsToDollarInput(cents, includeZero = false) {
   const amount = Number(cents);
-  return Number.isFinite(amount) && amount > 0 ? (amount / 100).toFixed(2) : "";
+  return Number.isFinite(amount) && (includeZero || amount > 0)
+    ? (amount / 100).toFixed(2)
+    : "";
 }
 
 function formatBasisPoints(basisPoints) {
@@ -115,6 +132,40 @@ function renderQuoteTotalRow(label, value, className = "") {
       <strong>${escapeHtml(label)}</strong>
       <span>${escapeHtml(value)}</span>
     </div>
+  `;
+}
+
+function renderDtfSourceComparison(comparison) {
+  if (!Array.isArray(comparison) || !comparison.length) {
+    return "";
+  }
+
+  return `
+    <section class="dtf-comparison-panel">
+      <div class="pricing-safety-heading">
+        <h3>DTF Source Comparison</h3>
+      </div>
+      <div class="dtf-comparison-grid">
+        ${comparison
+          .map(
+            (source) => `
+              <article class="dtf-comparison-option">
+                <h4>${escapeHtml(source.label)}</h4>
+                ${renderQuoteTotalRow("DTF Cost / Shirt", formatMoney(source.dtf_cost_per_shirt_cents))}
+                ${renderQuoteTotalRow("Total DTF Cost", formatMoney(source.dtf_cost_total_cents))}
+                ${renderQuoteTotalRow("Total Landed Cost", formatMoney(source.total_landed_cost_cents))}
+                ${renderQuoteTotalRow("Landed Cost / Shirt", formatMoney(source.landed_cost_per_shirt_cents))}
+                ${renderQuoteTotalRow("Gross Profit", formatMoney(source.gross_profit_cents))}
+                ${renderQuoteTotalRow("Profit / Shirt", formatMoney(source.gross_profit_per_shirt_cents))}
+                ${renderQuoteTotalRow("Gross Margin", formatBasisPoints(source.gross_margin_basis_points))}
+                ${renderQuoteTotalRow("Recommended Price / Shirt", formatMoney(source.recommended_price_per_shirt_cents))}
+                ${renderQuoteTotalRow("Recommended Total", formatMoney(source.recommended_total_cents))}
+              </article>
+            `
+          )
+          .join("")}
+      </div>
+    </section>
   `;
 }
 
@@ -318,7 +369,10 @@ function getQuotePayload() {
     pricing_safety: {
       shirt_blank_cost_cents: dollarsToOptionalCents(formData.get("shirt_blank_cost")),
       shirt_shipping_cents: dollarsToOptionalCents(formData.get("shirt_shipping")),
-      dtf_print_cost_cents: dollarsToOptionalCents(formData.get("dtf_print_cost")),
+      dtf_source: String(formData.get("dtf_source") || "in_house_dtf"),
+      dtf_cost_per_shirt_cents: dollarsToOptionalCents(
+        formData.get("dtf_cost_per_shirt")
+      ),
       dtf_shipping_cents: dollarsToOptionalCents(formData.get("dtf_shipping")),
       misc_cost_cents: dollarsToOptionalCents(formData.get("misc_cost")),
       setup_labor_cost_cents: dollarsToOptionalCents(formData.get("setup_labor_cost")),
@@ -353,6 +407,13 @@ function getMissingQuoteInputMessage() {
 
   if (totalQuantity < 1) {
     return "Enter at least one shirt quantity before calculating.";
+  }
+
+  if (
+    payload.pricing_safety.dtf_source === "manual_custom" &&
+    payload.pricing_safety.dtf_cost_per_shirt_cents == null
+  ) {
+    return "Enter a manual DTF cost per shirt before calculating.";
   }
 
   return "";
@@ -448,6 +509,9 @@ function renderCalculation(calculation) {
           <div><span>Recommended Price</span><strong>${formatMoney(safety.recommended_price_per_shirt_cents)}</strong></div>
           <div><span>Recommended Total</span><strong>${formatMoney(safety.recommended_total_cents)}</strong></div>
         </div>
+        ${renderQuoteTotalRow("Print Source", safety.dtf_source_label || "Not set")}
+        ${renderQuoteTotalRow("DTF Cost / Shirt", formatMoney(safety.dtf_cost_per_shirt_cents))}
+        ${renderQuoteTotalRow("Total DTF Cost", formatMoney(safety.dtf_print_cost_cents))}
         ${renderQuoteTotalRow("Total Landed Cost", formatMoney(safety.total_landed_cost_cents))}
         ${renderQuoteTotalRow("Customer Quoted Total", formatMoney(safety.quoted_total_cents))}
         ${renderQuoteTotalRow("Gross Profit", formatMoney(safety.gross_profit_cents))}
@@ -459,6 +523,7 @@ function renderCalculation(calculation) {
         ${renderQuoteTotalRow("Recommended Gross Profit", formatMoney(safety.recommended_profit_cents))}
         ${renderQuoteTotalRow("Recommended Margin", formatBasisPoints(safety.recommended_margin_basis_points))}
       </section>
+      ${renderDtfSourceComparison(safety.dtf_source_comparison)}
     `
     : "";
 
@@ -730,18 +795,32 @@ async function editQuoteDraft(quoteId) {
     if (Number(quote.total_landed_cost_cents) > 0) {
       setFormValue(
         "shirt_blank_cost",
-        centsToDollarInput(quote.landed_shirt_blank_cost_cents)
+        centsToDollarInput(quote.landed_shirt_blank_cost_cents, true)
       );
-      setFormValue("shirt_shipping", centsToDollarInput(quote.shirt_shipping_cents));
       setFormValue(
-        "dtf_print_cost",
-        centsToDollarInput(quote.landed_dtf_print_cost_cents)
+        "shirt_shipping",
+        centsToDollarInput(quote.shirt_shipping_cents, true)
       );
-      setFormValue("dtf_shipping", centsToDollarInput(quote.dtf_shipping_cents));
-      setFormValue("misc_cost", centsToDollarInput(quote.misc_cost_cents));
+      const savedDtfSource = quote.dtf_source || "manual_custom";
+      const savedDtfCostPerShirtCents = quote.dtf_source
+        ? Number(quote.dtf_cost_per_shirt_cents) || 0
+        : Math.round(
+            (Number(quote.landed_dtf_print_cost_cents) || 0) /
+              Math.max(1, Number(quote.total_quantity) || 1)
+          );
+      setFormValue("dtf_source", savedDtfSource);
+      setFormValue(
+        "dtf_cost_per_shirt",
+        centsToDollarInput(savedDtfCostPerShirtCents, true)
+      );
+      setFormValue(
+        "dtf_shipping",
+        centsToDollarInput(quote.dtf_shipping_cents, true)
+      );
+      setFormValue("misc_cost", centsToDollarInput(quote.misc_cost_cents, true));
       setFormValue(
         "setup_labor_cost",
-        centsToDollarInput(quote.setup_labor_cost_cents)
+        centsToDollarInput(quote.setup_labor_cost_cents, true)
       );
       setFormValue("quoted_price_per_shirt", "");
       setFormValue("quoted_total", centsToDollarInput(quote.total_price_cents));
@@ -845,6 +924,9 @@ function renderSavedPricingSafety(quote) {
         <h3>Pricing Safety</h3>
         <span class="margin-status">${escapeHtml(formatMarginStatus(status))}</span>
       </div>
+      ${renderQuoteTotalRow("Print Source", DTF_SOURCE_LABELS[quote.dtf_source] || "Not set")}
+      ${renderQuoteTotalRow("DTF Cost / Shirt", formatMoney(quote.dtf_cost_per_shirt_cents))}
+      ${renderQuoteTotalRow("Total DTF Cost", formatMoney(quote.landed_dtf_print_cost_cents))}
       ${renderQuoteTotalRow("Total Landed Cost", formatMoney(quote.total_landed_cost_cents))}
       ${renderQuoteTotalRow("Cost / Shirt", formatMoney(quote.landed_cost_per_shirt_cents))}
       ${renderQuoteTotalRow("Profit / Shirt", formatMoney(quote.gross_profit_per_shirt_cents))}
@@ -1174,7 +1256,7 @@ quoteForm?.addEventListener("input", (event) => {
     "print_type",
     "shirt_blank_cost",
     "shirt_shipping",
-    "dtf_print_cost",
+    "dtf_cost_per_shirt",
     "dtf_shipping",
     "misc_cost",
     "setup_labor_cost",
@@ -1190,6 +1272,28 @@ quoteForm?.addEventListener("input", (event) => {
 
   if (pricingFieldNames.has(target?.name) || target?.dataset?.size) {
     invalidateCalculation();
+  }
+});
+
+dtfSourceSelect?.addEventListener("change", async () => {
+  const hadCalculation = Boolean(lastCalculation);
+  const source = dtfSourceSelect.value;
+
+  if (Object.prototype.hasOwnProperty.call(DTF_SOURCE_DEFAULT_COSTS, source)) {
+    dtfCostPerShirtInput.value = DTF_SOURCE_DEFAULT_COSTS[source].toFixed(2);
+  } else {
+    dtfCostPerShirtInput.value = "";
+    dtfCostPerShirtInput.focus({ preventScroll: true });
+  }
+
+  invalidateCalculation();
+
+  if (hadCalculation && !getMissingQuoteInputMessage()) {
+    try {
+      await calculateQuote();
+    } catch {
+      // Error is shown inline.
+    }
   }
 });
 

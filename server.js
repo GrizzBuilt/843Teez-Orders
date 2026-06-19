@@ -434,6 +434,8 @@ db.serialize(() => {
       profit_cents INTEGER NOT NULL DEFAULT 0,
       landed_shirt_blank_cost_cents INTEGER NOT NULL DEFAULT 0,
       shirt_shipping_cents INTEGER NOT NULL DEFAULT 0,
+      dtf_source TEXT NOT NULL DEFAULT 'in_house_dtf',
+      dtf_cost_per_shirt_cents INTEGER NOT NULL DEFAULT 300,
       landed_dtf_print_cost_cents INTEGER NOT NULL DEFAULT 0,
       dtf_shipping_cents INTEGER NOT NULL DEFAULT 0,
       misc_cost_cents INTEGER NOT NULL DEFAULT 0,
@@ -772,6 +774,8 @@ db.serialize(() => {
     const pricingSafetyColumns = [
       ["landed_shirt_blank_cost_cents", "INTEGER NOT NULL DEFAULT 0"],
       ["shirt_shipping_cents", "INTEGER NOT NULL DEFAULT 0"],
+      ["dtf_source", "TEXT NOT NULL DEFAULT ''"],
+      ["dtf_cost_per_shirt_cents", "INTEGER NOT NULL DEFAULT 0"],
       ["landed_dtf_print_cost_cents", "INTEGER NOT NULL DEFAULT 0"],
       ["dtf_shipping_cents", "INTEGER NOT NULL DEFAULT 0"],
       ["misc_cost_cents", "INTEGER NOT NULL DEFAULT 0"],
@@ -1305,6 +1309,16 @@ const QUOTE_PROFIT_PROTECTION_TIERS = [
   { min: 100, max: null, target_margin_basis_points: 2800, minimum_profit_cents: 300 },
 ];
 
+const DTF_PRINT_SOURCES = {
+  in_house_dtf: { label: "In-house DTF", default_cost_per_shirt_cents: 300 },
+  outsourced_dtf: { label: "Outsourced DTF", default_cost_per_shirt_cents: 550 },
+  customer_supplied: {
+    label: "Customer-supplied transfers",
+    default_cost_per_shirt_cents: 0,
+  },
+  manual_custom: { label: "Manual custom cost", default_cost_per_shirt_cents: null },
+};
+
 function normalizeQuoteListStatus(value) {
   const allowedStatuses = new Set([
     "active",
@@ -1338,48 +1352,20 @@ function getQuoteProfitProtectionTier(quantity) {
   );
 }
 
-function calculateQuotePricingSafety({
-  input,
+function normalizeDtfPrintSource(value) {
+  const source = String(value || "").trim();
+  return Object.prototype.hasOwnProperty.call(DTF_PRINT_SOURCES, source)
+    ? source
+    : "";
+}
+
+function calculateProfitProtectionMetrics({
   totalQuantity,
-  calculatedBlankCostCents,
-  calculatedPrintCostCents,
-  calculatedSetupFeeCents,
-  calculatedTotalPriceCents,
+  totalLandedCostCents,
+  quotedTotalCents,
+  tier,
 }) {
-  const safetyInput = input?.pricing_safety && typeof input.pricing_safety === "object"
-    ? input.pricing_safety
-    : {};
-  const tier = getQuoteProfitProtectionTier(totalQuantity);
-  const landedShirtBlankCostCents =
-    normalizeOptionalMoneyCents(safetyInput.shirt_blank_cost_cents) ??
-    calculatedBlankCostCents;
-  const shirtShippingCents = normalizeMoneyCents(safetyInput.shirt_shipping_cents);
-  const landedDtfPrintCostCents =
-    normalizeOptionalMoneyCents(safetyInput.dtf_print_cost_cents) ??
-    calculatedPrintCostCents;
-  const dtfShippingCents = normalizeMoneyCents(safetyInput.dtf_shipping_cents);
-  const miscCostCents = normalizeMoneyCents(safetyInput.misc_cost_cents);
-  const setupLaborCostCents =
-    normalizeOptionalMoneyCents(safetyInput.setup_labor_cost_cents) ??
-    calculatedSetupFeeCents;
-  const quotedTotalOverrideCents = normalizeOptionalMoneyCents(
-    safetyInput.quoted_total_cents
-  );
-  const quotedPricePerShirtOverrideCents = normalizeOptionalMoneyCents(
-    safetyInput.quoted_price_per_shirt_cents
-  );
-  const quotedTotalCents = quotedTotalOverrideCents ??
-    (quotedPricePerShirtOverrideCents == null
-      ? calculatedTotalPriceCents
-      : quotedPricePerShirtOverrideCents * totalQuantity);
   const quotedPricePerShirtCents = Math.round(quotedTotalCents / totalQuantity);
-  const totalLandedCostCents =
-    landedShirtBlankCostCents +
-    shirtShippingCents +
-    landedDtfPrintCostCents +
-    dtfShippingCents +
-    miscCostCents +
-    setupLaborCostCents;
   const landedCostPerShirtRaw = totalLandedCostCents / totalQuantity;
   const landedCostPerShirtCents = Math.round(landedCostPerShirtRaw);
   const grossProfitCents = quotedTotalCents - totalLandedCostCents;
@@ -1412,12 +1398,6 @@ function calculateQuotePricingSafety({
       : "too_low";
 
   return {
-    shirt_blank_cost_cents: landedShirtBlankCostCents,
-    shirt_shipping_cents: shirtShippingCents,
-    dtf_print_cost_cents: landedDtfPrintCostCents,
-    dtf_shipping_cents: dtfShippingCents,
-    misc_cost_cents: miscCostCents,
-    setup_labor_cost_cents: setupLaborCostCents,
     total_landed_cost_cents: totalLandedCostCents,
     landed_cost_per_shirt_cents: landedCostPerShirtCents,
     quoted_total_cents: quotedTotalCents,
@@ -1435,6 +1415,121 @@ function calculateQuotePricingSafety({
     recommended_margin_basis_points: recommendedMarginBasisPoints,
     margin_status: marginStatus,
     low_margin_warning: quotedPricePerShirtCents < recommendedPricePerShirtCents,
+  };
+}
+
+function calculateQuotePricingSafety({
+  input,
+  totalQuantity,
+  calculatedBlankCostCents,
+  calculatedPrintCostCents,
+  calculatedSetupFeeCents,
+  calculatedTotalPriceCents,
+}) {
+  const safetyInput = input?.pricing_safety && typeof input.pricing_safety === "object"
+    ? input.pricing_safety
+    : {};
+  const tier = getQuoteProfitProtectionTier(totalQuantity);
+  const landedShirtBlankCostCents =
+    normalizeOptionalMoneyCents(safetyInput.shirt_blank_cost_cents) ??
+    calculatedBlankCostCents;
+  const shirtShippingCents = normalizeMoneyCents(safetyInput.shirt_shipping_cents);
+  const legacyDtfPrintCostCents = normalizeOptionalMoneyCents(
+    safetyInput.dtf_print_cost_cents
+  );
+  const requestedDtfSource = normalizeDtfPrintSource(safetyInput.dtf_source);
+  const dtfSource = requestedDtfSource ||
+    (legacyDtfPrintCostCents == null ? "in_house_dtf" : "manual_custom");
+  const explicitDtfCostPerShirtCents = normalizeOptionalMoneyCents(
+    safetyInput.dtf_cost_per_shirt_cents
+  );
+
+  if (
+    dtfSource === "manual_custom" &&
+    explicitDtfCostPerShirtCents == null &&
+    legacyDtfPrintCostCents == null
+  ) {
+    const error = new Error("Enter a manual DTF cost per shirt");
+    error.status = 400;
+    throw error;
+  }
+
+  const defaultDtfCostPerShirtCents =
+    DTF_PRINT_SOURCES[dtfSource].default_cost_per_shirt_cents;
+  const dtfCostPerShirtCents = explicitDtfCostPerShirtCents ??
+    (legacyDtfPrintCostCents == null
+      ? defaultDtfCostPerShirtCents ??
+        Math.round(calculatedPrintCostCents / totalQuantity)
+      : Math.round(legacyDtfPrintCostCents / totalQuantity));
+  const landedDtfPrintCostCents = dtfCostPerShirtCents * totalQuantity;
+  const dtfShippingCents = normalizeMoneyCents(safetyInput.dtf_shipping_cents);
+  const miscCostCents = normalizeMoneyCents(safetyInput.misc_cost_cents);
+  const setupLaborCostCents =
+    normalizeOptionalMoneyCents(safetyInput.setup_labor_cost_cents) ??
+    calculatedSetupFeeCents;
+  const quotedTotalOverrideCents = normalizeOptionalMoneyCents(
+    safetyInput.quoted_total_cents
+  );
+  const quotedPricePerShirtOverrideCents = normalizeOptionalMoneyCents(
+    safetyInput.quoted_price_per_shirt_cents
+  );
+  const quotedTotalCents = quotedTotalOverrideCents ??
+    (quotedPricePerShirtOverrideCents == null
+      ? calculatedTotalPriceCents
+      : quotedPricePerShirtOverrideCents * totalQuantity);
+  const totalLandedCostCents =
+    landedShirtBlankCostCents +
+    shirtShippingCents +
+    landedDtfPrintCostCents +
+    dtfShippingCents +
+    miscCostCents +
+    setupLaborCostCents;
+  const metrics = calculateProfitProtectionMetrics({
+    totalQuantity,
+    totalLandedCostCents,
+    quotedTotalCents,
+    tier,
+  });
+  const fixedCostCents =
+    landedShirtBlankCostCents +
+    shirtShippingCents +
+    dtfShippingCents +
+    miscCostCents +
+    setupLaborCostCents;
+  const dtf_source_comparison = ["in_house_dtf", "outsourced_dtf"].map(
+    (source) => {
+      const sourceCostPerShirtCents =
+        DTF_PRINT_SOURCES[source].default_cost_per_shirt_cents;
+      const sourceDtfCostTotalCents = sourceCostPerShirtCents * totalQuantity;
+      const sourceMetrics = calculateProfitProtectionMetrics({
+        totalQuantity,
+        totalLandedCostCents: fixedCostCents + sourceDtfCostTotalCents,
+        quotedTotalCents,
+        tier,
+      });
+
+      return {
+        source,
+        label: DTF_PRINT_SOURCES[source].label,
+        dtf_cost_per_shirt_cents: sourceCostPerShirtCents,
+        dtf_cost_total_cents: sourceDtfCostTotalCents,
+        ...sourceMetrics,
+      };
+    }
+  );
+
+  return {
+    shirt_blank_cost_cents: landedShirtBlankCostCents,
+    shirt_shipping_cents: shirtShippingCents,
+    dtf_source: dtfSource,
+    dtf_source_label: DTF_PRINT_SOURCES[dtfSource].label,
+    dtf_cost_per_shirt_cents: dtfCostPerShirtCents,
+    dtf_print_cost_cents: landedDtfPrintCostCents,
+    dtf_shipping_cents: dtfShippingCents,
+    misc_cost_cents: miscCostCents,
+    setup_labor_cost_cents: setupLaborCostCents,
+    ...metrics,
+    dtf_source_comparison,
   };
 }
 
@@ -2767,6 +2862,8 @@ app.get("/api/quotes", async (req, res) => {
           profit_cents,
           total_landed_cost_cents,
           landed_cost_per_shirt_cents,
+          dtf_source,
+          dtf_cost_per_shirt_cents,
           gross_profit_per_shirt_cents,
           gross_margin_basis_points,
           target_margin_basis_points,
@@ -2937,6 +3034,8 @@ app.post("/api/quotes", async (req, res) => {
             profit_cents,
             landed_shirt_blank_cost_cents,
             shirt_shipping_cents,
+            dtf_source,
+            dtf_cost_per_shirt_cents,
             landed_dtf_print_cost_cents,
             dtf_shipping_cents,
             misc_cost_cents,
@@ -2955,7 +3054,7 @@ app.post("/api/quotes", async (req, res) => {
             recommended_margin_basis_points,
             margin_status
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           customerName,
@@ -2973,6 +3072,8 @@ app.post("/api/quotes", async (req, res) => {
           totals.profit_cents,
           safety.shirt_blank_cost_cents,
           safety.shirt_shipping_cents,
+          safety.dtf_source,
+          safety.dtf_cost_per_shirt_cents,
           safety.dtf_print_cost_cents,
           safety.dtf_shipping_cents,
           safety.misc_cost_cents,
@@ -3104,6 +3205,8 @@ app.patch("/api/quotes/:id", async (req, res) => {
               profit_cents = ?,
               landed_shirt_blank_cost_cents = ?,
               shirt_shipping_cents = ?,
+              dtf_source = ?,
+              dtf_cost_per_shirt_cents = ?,
               landed_dtf_print_cost_cents = ?,
               dtf_shipping_cents = ?,
               misc_cost_cents = ?,
@@ -3139,6 +3242,8 @@ app.patch("/api/quotes/:id", async (req, res) => {
           totals.profit_cents,
           safety.shirt_blank_cost_cents,
           safety.shirt_shipping_cents,
+          safety.dtf_source,
+          safety.dtf_cost_per_shirt_cents,
           safety.dtf_print_cost_cents,
           safety.dtf_shipping_cents,
           safety.misc_cost_cents,
