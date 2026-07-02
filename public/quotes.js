@@ -427,8 +427,20 @@ function getSelectedPlacements() {
 function getQuotePayload() {
   const formData = new FormData(quoteForm);
   const items = getGarmentItems();
+  const expectedTotalQuantity = items.reduce(
+    (sum, item) =>
+      sum +
+      Object.values(item.sizes || {}).reduce(
+        (itemSum, quantity) => itemSum + (Number(quantity) || 0),
+        0
+      ),
+    0
+  );
 
   const payload = {
+    quote_payload_version: 2,
+    expected_item_count: items.length,
+    expected_total_quantity: expectedTotalQuantity,
     customer_name: String(formData.get("customer_name") || "").trim(),
     customer_email: String(formData.get("customer_email") || "").trim(),
     customer_phone: String(formData.get("customer_phone") || "").trim(),
@@ -450,15 +462,13 @@ function getQuotePayload() {
       quoted_total_cents: dollarsToOptionalCents(formData.get("quoted_total")),
     },
     items,
-    item: items[0],
   };
 
   console.log("QUOTE PAYLOAD", payload);
   return payload;
 }
 
-function getMissingQuoteInputMessage() {
-  const payload = getQuotePayload();
+function getMissingQuoteInputMessage(payload = getQuotePayload()) {
   if (!payload.items.length) {
     return "Add at least one shirt style before calculating.";
   }
@@ -483,7 +493,7 @@ function getMissingQuoteInputMessage() {
   }
 
   if (
-    payload.item.print_type === "DTF" &&
+    payload.items[0]?.print_type === "DTF" &&
     payload.pricing_safety.dtf_source === "manual_custom" &&
     payload.pricing_safety.dtf_cost_per_shirt_cents == null
   ) {
@@ -495,8 +505,8 @@ function getMissingQuoteInputMessage() {
 
 function renderCalculation(calculation) {
   const totals = calculation?.totals;
-  const item = calculation?.item;
-  const calculationItems = calculation?.items || (item ? [item] : []);
+  const calculationItems = calculation?.items || [];
+  const item = calculationItems[0] || calculation?.item;
 
   if (!quoteSummaryContent || !totals || !item) return;
 
@@ -630,7 +640,7 @@ function renderCalculation(calculation) {
           ${renderQuoteTotalRow("Margin-Based Price", formatMoney(safety.margin_price_per_shirt_cents))}
           ${renderQuoteTotalRow("Profit-Floor Price", formatMoney(safety.profit_price_per_shirt_cents))}
           ${renderQuoteTotalRow("Calculated Blank Cost", formatMoney(totals.blank_cost_cents))}
-          ${renderQuoteTotalRow("Calculated Print Cost", formatMoney(totals.print_cost_cents))}
+          ${item.print_type === "DTF" ? "" : renderQuoteTotalRow("Calculated Print Cost", formatMoney(totals.print_cost_cents))}
           ${renderQuoteTotalRow("Calculated Setup Fees", formatMoney(totals.setup_fee_cents))}
           ${placementRows ? `<section class="placement-details"><h3>Placement Breakdown</h3>${placementRows}</section>` : ""}
           ${renderDtfSourceComparison(safety.dtf_source_comparison)}
@@ -775,7 +785,8 @@ async function loadBlanks() {
 
 async function calculateQuote() {
   clearQuoteError();
-  const missingInputMessage = getMissingQuoteInputMessage();
+  const payload = getQuotePayload();
+  const missingInputMessage = getMissingQuoteInputMessage(payload);
 
   if (missingInputMessage) {
     showQuoteError(missingInputMessage);
@@ -789,10 +800,22 @@ async function calculateQuote() {
     const response = await fetch("/api/quotes/calculate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(getQuotePayload()),
+      body: JSON.stringify(payload),
     });
 
     const calculation = await parseApiResponse(response, "Failed to calculate quote");
+    const responseItems = calculation?.items || [];
+    const responseQuantity = Number(calculation?.totals?.total_quantity) || 0;
+
+    if (
+      responseItems.length !== payload.expected_item_count ||
+      responseQuantity !== payload.expected_total_quantity
+    ) {
+      throw new Error(
+        `Quote calculation mismatch: sent ${payload.expected_item_count} styles / ${payload.expected_total_quantity} shirts, but received ${responseItems.length} styles / ${responseQuantity} shirts. Restart the Node/PM2 process and calculate again.`
+      );
+    }
+
     renderCalculation(calculation);
     return calculation;
   } catch (error) {

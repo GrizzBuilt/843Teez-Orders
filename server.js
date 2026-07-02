@@ -2310,9 +2310,17 @@ function getCombinedMarginStatus(quotedTotalCents, recommendedTotalCents) {
 }
 
 async function calculateQuote(input) {
+  const payloadVersion = Math.floor(Number(input?.quote_payload_version)) || 1;
   const requestedItems = Array.isArray(input?.items)
     ? input.items.filter((item) => item && typeof item === "object")
     : [];
+
+  if (payloadVersion >= 2 && !requestedItems.length) {
+    const error = new Error("Quote request must include at least one shirt style");
+    error.status = 400;
+    throw error;
+  }
+
   const itemInputs = requestedItems.length
     ? requestedItems
     : [getQuoteItemInput(input)];
@@ -2325,6 +2333,36 @@ async function calculateQuote(input) {
       ),
     0
   );
+  const expectedItemCount = Math.floor(Number(input?.expected_item_count));
+  const expectedTotalQuantity = Math.floor(
+    Number(input?.expected_total_quantity)
+  );
+
+  console.log("QUOTE INPUT DEBUG", {
+    payloadVersion,
+    itemCount: itemInputs.length,
+    itemQuantities: itemInputs.map((item) =>
+      normalizeQuoteSizes(item.sizes).reduce(
+        (sum, size) => sum + size.quantity,
+        0
+      )
+    ),
+    combinedPricingQuantity,
+    expectedItemCount,
+    expectedTotalQuantity,
+  });
+
+  if (
+    payloadVersion >= 2 &&
+    (expectedItemCount !== itemInputs.length ||
+      expectedTotalQuantity !== combinedPricingQuantity)
+  ) {
+    const error = new Error(
+      `Quote request mismatch: received ${itemInputs.length} styles / ${combinedPricingQuantity} shirts`
+    );
+    error.status = 400;
+    throw error;
+  }
 
   if (itemInputs.length > 12) {
     const error = new Error("A quote can include up to 12 shirt styles");
@@ -2393,6 +2431,8 @@ async function calculateQuote(input) {
   if (calculations.length === 1) {
     return {
       ...calculations[0],
+      quote_payload_version: payloadVersion,
+      item_count: 1,
       items: [calculations[0].item],
     };
   }
@@ -2561,6 +2601,8 @@ async function calculateQuote(input) {
   };
 
   return {
+    quote_payload_version: payloadVersion,
+    item_count: items.length,
     pricing_label: totals.pricing_label,
     pricing_debug: totals.pricing_debug,
     pricing_safety: pricingSafety,
