@@ -47,26 +47,19 @@
 
         <form id="quote-form" class="quote-form" novalidate>
           <div class="quote-section">
-            <h3>Blank</h3>
-
-            <div class="quote-grid">
-              <label class="quote-field quote-field-wide">
-                <span>Shirt Blank</span>
-                <select id="shirt_blank_id" name="shirt_blank_id" required>
-                  <option value="">Loading blanks...</option>
-                </select>
-              </label>
-
-              <label class="quote-field">
-                <span>Color</span>
-                <input
-                  type="text"
-                  id="color"
-                  name="color"
-                  placeholder="Black, white, safety green..."
-                />
-              </label>
+            <div class="quote-section-heading-row garment-section-heading">
+              <div>
+                <h3>Shirt Styles &amp; Sizes</h3>
+                <p class="quote-muted">Need both men’s/unisex and women’s shirts, or different shirt types? Add each style separately so we can quote it accurately.</p>
+              </div>
+              <span id="garment-total" class="quote-count-pill">0 total</span>
             </div>
+
+            <div id="garment-blocks" class="garment-blocks"></div>
+
+            <button type="button" class="secondary-btn add-garment-btn" id="add-garment-btn">
+              + Add Another Shirt Style
+            </button>
           </div>
 
           <div class="quote-section">
@@ -99,15 +92,6 @@
             >
               <strong>Add Sleeve +$3/shirt</strong>
             </button>
-          </div>
-
-          <div class="quote-section">
-            <div class="quote-section-heading-row">
-              <h3>Quantity &amp; Sizes</h3>
-              <span id="quantity-total" class="quote-count-pill">0 total</span>
-            </div>
-
-            <div class="size-grid" id="size-grid"></div>
           </div>
 
           <div class="quote-section">

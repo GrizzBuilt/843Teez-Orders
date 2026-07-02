@@ -192,3 +192,22 @@ pricing_safety.dtf_source_comparison
 
 The older internal names remain available so saved quotes and the current quote
 UI do not need a breaking response migration.
+
+## Multiple Shirt Style Verification
+
+The quote API accepts `items` while continuing to accept the legacy single
+`item` payload. Each item is calculated independently before its totals are
+combined.
+
+Manual check:
+
+1. Add a PC43 group with M: 8, L: 8, XL: 8, and 2XL: 8.
+2. Add a second blank with M: 6, L: 6, and XL: 6.
+3. Calculate and confirm each style shows its own tier, size adjustments, and
+   subtotal.
+4. Confirm the combined quantity is 50 and the quote total equals the sum of
+   both style subtotals.
+5. Save and reopen the draft. Both style groups, colors, notes, and size
+   quantities must be restored.
+6. Open Customer View and confirm both styles are listed under Shirt Styles &
+   Sizes with Total Garments: 50.

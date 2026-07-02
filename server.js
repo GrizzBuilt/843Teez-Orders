@@ -467,6 +467,7 @@ db.serialize(() => {
       blank_label TEXT NOT NULL,
       blank_base_cost_cents INTEGER NOT NULL DEFAULT 0,
       color TEXT,
+      style_notes TEXT,
       print_type TEXT NOT NULL,
       placements_json TEXT NOT NULL DEFAULT '[]',
       total_quantity INTEGER NOT NULL DEFAULT 0,
@@ -806,6 +807,23 @@ db.serialize(() => {
         }
       });
     });
+  });
+
+  db.all(`PRAGMA table_info(quote_items)`, [], (pragmaErr, columns) => {
+    if (pragmaErr) {
+      console.error("Error reading quote_items table schema:", pragmaErr.message);
+      return;
+    }
+
+    if (!columns.some((column) => column.name === "style_notes")) {
+      db.run(`ALTER TABLE quote_items ADD COLUMN style_notes TEXT`, (alterErr) => {
+        if (alterErr) {
+          console.error("Error adding quote_items.style_notes:", alterErr.message);
+        } else {
+          console.log("Added quote_items.style_notes.");
+        }
+      });
+    }
   });
 
   db.all(`PRAGMA table_info(print_pricing_rules)`, [], (pragmaErr, columns) => {
@@ -1717,17 +1735,29 @@ function buildItemsSummaryFromQuoteItem(item, sizes) {
   }`;
 }
 
-function buildNotesFromQuote(quote, item) {
-  const placements = getPlacementLabels(JSON.parse(item.placements_json || "[]"));
+function buildNotesFromQuote(quote, itemDetails) {
   const notes = [
     `Converted from Quote #${quote.id}`,
     `Quote total: ${formatCentsForNote(quote.total_price_cents)}`,
     `Price per shirt: ${formatCentsForNote(quote.price_per_shirt_cents)}`,
   ];
 
-  if (placements.length) {
-    notes.push(`Placements: ${placements.join(", ")}`);
-  }
+  itemDetails.forEach(({ item, sizes }, index) => {
+    const placements = getPlacementLabels(
+      JSON.parse(item.placements_json || "[]")
+    );
+    notes.push(
+      `Style ${index + 1}: ${buildItemsSummaryFromQuoteItem(item, sizes)}`
+    );
+
+    if (placements.length) {
+      notes.push(`Style ${index + 1} placements: ${placements.join(", ")}`);
+    }
+
+    if (item.style_notes) {
+      notes.push(`Style ${index + 1} notes: ${item.style_notes}`);
+    }
+  });
 
   if (quote.notes) {
     notes.push(`Quote notes: ${quote.notes}`);
@@ -1736,8 +1766,9 @@ function buildNotesFromQuote(quote, item) {
   return notes.join("\n");
 }
 
-async function saveQuoteSnapshotInOpenTransaction(quoteId, quoteInput, item, totals) {
-  const itemResult = await dbRun(
+async function saveQuoteSnapshotInOpenTransaction(quoteId, quoteInput, items, totals) {
+  for (const item of items) {
+    const itemResult = await dbRun(
     `
       INSERT INTO quote_items (
         quote_id,
@@ -1745,6 +1776,7 @@ async function saveQuoteSnapshotInOpenTransaction(quoteId, quoteInput, item, tot
         blank_label,
         blank_base_cost_cents,
         color,
+        style_notes,
         print_type,
         placements_json,
         total_quantity,
@@ -1755,7 +1787,7 @@ async function saveQuoteSnapshotInOpenTransaction(quoteId, quoteInput, item, tot
         price_per_shirt_cents,
         profit_cents
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     [
       quoteId,
@@ -1763,6 +1795,7 @@ async function saveQuoteSnapshotInOpenTransaction(quoteId, quoteInput, item, tot
       item.blank_label,
       item.blank_base_cost_cents,
       item.color,
+      item.style_notes,
       item.print_type,
       item.placements_json,
       item.total_quantity,
@@ -1773,10 +1806,10 @@ async function saveQuoteSnapshotInOpenTransaction(quoteId, quoteInput, item, tot
       item.price_per_shirt_cents,
       item.profit_cents,
     ]
-  );
+    );
 
-  for (const size of item.sizes) {
-    await dbRun(
+    for (const size of item.sizes) {
+      await dbRun(
       `
         INSERT INTO quote_item_sizes (
           quote_item_id,
@@ -1792,7 +1825,8 @@ async function saveQuoteSnapshotInOpenTransaction(quoteId, quoteInput, item, tot
         size.quantity,
         size.blank_extra_cost_cents,
       ]
-    );
+      );
+    }
   }
 
   return {
@@ -1842,7 +1876,7 @@ async function getNextOrderNumberInOpenTransaction() {
   return formatOrderNumber(year, row.value);
 }
 
-async function calculateQuote(input) {
+async function calculateQuoteItem(input) {
   const itemInput = getQuoteItemInput(input);
   const shirtBlankId = Number(itemInput.shirt_blank_id);
   const printType = normalizePrintType(itemInput.print_type);
@@ -2203,6 +2237,7 @@ async function calculateQuote(input) {
       blank_label: getBlankLabel(blank),
       blank_base_cost_cents: selectedBlankBaseCostCents,
       color: String(itemInput.color || "").trim(),
+      style_notes: String(itemInput.style_notes || "").trim(),
       print_type: printType,
       placements,
       placements_json: JSON.stringify(placements),
@@ -2243,6 +2278,260 @@ async function calculateQuote(input) {
       pricing_debug: pricingDebug,
       pricing_safety: pricingSafety,
     },
+  };
+}
+
+function sumQuoteValues(calculations, selector) {
+  return calculations.reduce(
+    (sum, calculation) => sum + normalizeMoneyCents(selector(calculation)),
+    0
+  );
+}
+
+function getCombinedMarginStatus(quotedTotalCents, recommendedTotalCents) {
+  if (quotedTotalCents >= recommendedTotalCents) return "healthy";
+  if (quotedTotalCents >= recommendedTotalCents * 0.9) return "tight";
+  return "too_low";
+}
+
+async function calculateQuote(input) {
+  const requestedItems = Array.isArray(input?.items)
+    ? input.items.filter((item) => item && typeof item === "object")
+    : [];
+  const itemInputs = requestedItems.length
+    ? requestedItems
+    : [getQuoteItemInput(input)];
+
+  if (itemInputs.length > 12) {
+    const error = new Error("A quote can include up to 12 shirt styles");
+    error.status = 400;
+    throw error;
+  }
+
+  const sharedSafety =
+    input?.pricing_safety && typeof input.pricing_safety === "object"
+      ? input.pricing_safety
+      : {};
+
+  if (
+    itemInputs.length > 1 &&
+    normalizeOptionalMoneyCents(sharedSafety.shirt_blank_cost_cents) != null
+  ) {
+    const error = new Error(
+      "Manual shirt cost total is only available for single-style quotes"
+    );
+    error.status = 400;
+    throw error;
+  }
+
+  if (
+    itemInputs.length > 1 &&
+    normalizeOptionalMoneyCents(sharedSafety.quoted_total_cents) != null
+  ) {
+    const error = new Error(
+      "Use customer price per shirt instead of a manual total for multi-style quotes"
+    );
+    error.status = 400;
+    throw error;
+  }
+
+  const calculations = [];
+
+  for (const [index, item] of itemInputs.entries()) {
+    const itemSafety = {
+      ...sharedSafety,
+      shirt_blank_cost_cents: null,
+      quoted_total_cents: null,
+      shirt_shipping_cents:
+        index === 0 ? sharedSafety.shirt_shipping_cents : 0,
+      dtf_shipping_cents:
+        index === 0 ? sharedSafety.dtf_shipping_cents : 0,
+      misc_cost_cents: index === 0 ? sharedSafety.misc_cost_cents : 0,
+      setup_labor_cost_cents:
+        index === 0 ? sharedSafety.setup_labor_cost_cents : null,
+    };
+
+    if (itemInputs.length === 1) {
+      itemSafety.shirt_blank_cost_cents = sharedSafety.shirt_blank_cost_cents;
+      itemSafety.quoted_total_cents = sharedSafety.quoted_total_cents;
+    }
+
+    calculations.push(
+      await calculateQuoteItem({
+        ...input,
+        item,
+        pricing_safety: itemSafety,
+      })
+    );
+  }
+
+  if (calculations.length === 1) {
+    return {
+      ...calculations[0],
+      items: [calculations[0].item],
+    };
+  }
+
+  const items = calculations.map((calculation) => calculation.item);
+  const totalQuantity = items.reduce(
+    (sum, item) => sum + Number(item.total_quantity || 0),
+    0
+  );
+  const totalPriceCents = sumQuoteValues(
+    calculations,
+    (calculation) => calculation.totals.total_price_cents
+  );
+  const totalLandedCostCents = sumQuoteValues(
+    calculations,
+    (calculation) => calculation.totals.pricing_safety.total_landed_cost_cents
+  );
+  const grossProfitCents = totalPriceCents - totalLandedCostCents;
+  const recommendedTotalCents = sumQuoteValues(
+    calculations,
+    (calculation) => calculation.totals.pricing_safety.recommended_total_cents
+  );
+  const recommendedProfitCents = recommendedTotalCents - totalLandedCostCents;
+  const grossMarginBasisPoints = totalPriceCents > 0
+    ? Math.round((grossProfitCents / totalPriceCents) * 10000)
+    : 0;
+  const recommendedMarginBasisPoints = recommendedTotalCents > 0
+    ? Math.round((recommendedProfitCents / recommendedTotalCents) * 10000)
+    : 0;
+  const marginStatus = getCombinedMarginStatus(
+    totalPriceCents,
+    recommendedTotalCents
+  );
+  const firstSafety = calculations[0].totals.pricing_safety;
+  const weightedSafetyValue = (field) => Math.round(
+    calculations.reduce(
+      (sum, calculation) =>
+        sum +
+        normalizeMoneyCents(calculation.totals.pricing_safety[field]) *
+          Number(calculation.totals.total_quantity || 0),
+      0
+    ) / totalQuantity
+  );
+  const targetMarginBasisPoints = Math.max(
+    ...calculations.map(
+      (calculation) =>
+        calculation.totals.pricing_safety.target_margin_basis_points
+    )
+  );
+  const pricingSafety = {
+    ...firstSafety,
+    shirt_blank_cost_cents: sumQuoteValues(
+      calculations,
+      (calculation) => calculation.totals.pricing_safety.shirt_blank_cost_cents
+    ),
+    dtf_print_cost_cents: sumQuoteValues(
+      calculations,
+      (calculation) => calculation.totals.pricing_safety.dtf_print_cost_cents
+    ),
+    internal_add_on_cost_cents: sumQuoteValues(
+      calculations,
+      (calculation) => calculation.totals.pricing_safety.internal_add_on_cost_cents
+    ),
+    setup_labor_cost_cents: sumQuoteValues(
+      calculations,
+      (calculation) => calculation.totals.pricing_safety.setup_labor_cost_cents
+    ),
+    total_landed_cost_cents: totalLandedCostCents,
+    landed_cost_per_shirt_cents: Math.round(
+      totalLandedCostCents / totalQuantity
+    ),
+    quoted_total_cents: totalPriceCents,
+    customer_quoted_total_cents: totalPriceCents,
+    quoted_price_per_shirt_cents: Math.round(totalPriceCents / totalQuantity),
+    gross_profit_cents: grossProfitCents,
+    gross_profit_per_shirt_cents: Math.round(grossProfitCents / totalQuantity),
+    gross_margin_basis_points: grossMarginBasisPoints,
+    gross_margin_percent: Math.round(grossMarginBasisPoints) / 100,
+    target_margin_basis_points: targetMarginBasisPoints,
+    target_gross_margin_percent: targetMarginBasisPoints / 100,
+    minimum_profit_per_shirt_cents: weightedSafetyValue(
+      "minimum_profit_per_shirt_cents"
+    ),
+    margin_price_per_shirt_cents: weightedSafetyValue(
+      "margin_price_per_shirt_cents"
+    ),
+    margin_based_price_cents: weightedSafetyValue(
+      "margin_price_per_shirt_cents"
+    ),
+    profit_price_per_shirt_cents: weightedSafetyValue(
+      "profit_price_per_shirt_cents"
+    ),
+    profit_floor_price_cents: weightedSafetyValue(
+      "profit_price_per_shirt_cents"
+    ),
+    recommended_price_per_shirt_cents: Math.round(
+      recommendedTotalCents / totalQuantity
+    ),
+    recommended_price_cents: Math.round(
+      recommendedTotalCents / totalQuantity
+    ),
+    recommended_total_cents: recommendedTotalCents,
+    recommended_profit_cents: recommendedProfitCents,
+    recommended_gross_profit_cents: recommendedProfitCents,
+    recommended_margin_basis_points: recommendedMarginBasisPoints,
+    margin_status: marginStatus,
+    low_margin_warning: totalPriceCents < recommendedTotalCents,
+    dtf_source_comparison: [],
+  };
+  const totals = {
+    total_quantity: totalQuantity,
+    blank_cost_cents: sumQuoteValues(
+      calculations,
+      (calculation) => calculation.totals.blank_cost_cents
+    ),
+    print_cost_cents: sumQuoteValues(
+      calculations,
+      (calculation) => calculation.totals.print_cost_cents
+    ),
+    setup_fee_cents: sumQuoteValues(
+      calculations,
+      (calculation) => calculation.totals.setup_fee_cents
+    ),
+    total_price_cents: totalPriceCents,
+    price_per_shirt_cents: Math.round(totalPriceCents / totalQuantity),
+    profit_cents: grossProfitCents,
+    pricing_label: `${items.length} shirt styles priced separately`,
+    base_deal_subtotal_cents: sumQuoteValues(
+      calculations,
+      (calculation) => calculation.totals.base_deal_subtotal_cents
+    ),
+    blank_upgrade_total_cents: sumQuoteValues(
+      calculations,
+      (calculation) => calculation.totals.blank_upgrade_total_cents
+    ),
+    customer_blank_upgrade_total_cents: sumQuoteValues(
+      calculations,
+      (calculation) => calculation.totals.customer_blank_upgrade_total_cents
+    ),
+    sleeve_add_on_total_cents: sumQuoteValues(
+      calculations,
+      (calculation) => calculation.totals.sleeve_add_on_total_cents
+    ),
+    size_upcharge_total_cents: sumQuoteValues(
+      calculations,
+      (calculation) => calculation.totals.size_upcharge_total_cents
+    ),
+    pricing_safety: pricingSafety,
+    pricing_debug: {
+      itemCount: items.length,
+      itemCalculations: calculations.map((calculation) =>
+        calculation.totals.pricing_debug
+      ),
+      totalPriceCents,
+    },
+  };
+
+  return {
+    pricing_label: totals.pricing_label,
+    pricing_debug: totals.pricing_debug,
+    pricing_safety: pricingSafety,
+    item: items[0],
+    items,
+    totals,
   };
 }
 
@@ -2979,9 +3268,10 @@ app.get("/api/quotes/:id", async (req, res) => {
       return res.status(404).json({ error: "Quote not found" });
     }
 
-    const items = await dbAll(`SELECT * FROM quote_items WHERE quote_id = ?`, [
-      quoteId,
-    ]);
+    const items = await dbAll(
+      `SELECT * FROM quote_items WHERE quote_id = ? ORDER BY id ASC`,
+      [quoteId]
+    );
 
     const itemIds = items.map((item) => item.id);
     let sizeRows = [];
@@ -3088,7 +3378,7 @@ app.post("/api/quotes", async (req, res) => {
 
   try {
     const calculation = await calculateQuote(quoteInput);
-    const item = calculation.item;
+    const items = calculation.items || [calculation.item];
     const totals = calculation.totals;
     const safety = totals.pricing_safety;
 
@@ -3177,7 +3467,7 @@ app.post("/api/quotes", async (req, res) => {
       const savedQuote = await saveQuoteSnapshotInOpenTransaction(
         quoteId,
         quoteInput,
-        item,
+        items,
         totals
       );
 
@@ -3241,7 +3531,7 @@ app.patch("/api/quotes/:id", async (req, res) => {
       }
 
       const calculation = await calculateQuote(quoteInput);
-      const item = calculation.item;
+      const items = calculation.items || [calculation.item];
       const totals = calculation.totals;
       const safety = totals.pricing_safety;
 
@@ -3347,7 +3637,7 @@ app.patch("/api/quotes/:id", async (req, res) => {
       const savedQuote = await saveQuoteSnapshotInOpenTransaction(
         quoteId,
         quoteInput,
-        item,
+        items,
         totals
       );
 
@@ -3401,35 +3691,42 @@ app.post("/api/quotes/:id/convert-to-order", async (req, res) => {
         });
       }
 
-      const item = await dbGet(
+      const items = await dbAll(
         `
           SELECT *
           FROM quote_items
           WHERE quote_id = ?
           ORDER BY id ASC
-          LIMIT 1
         `,
         [quoteId]
       );
 
-      if (!item) {
+      if (!items.length) {
         await dbRun("ROLLBACK");
         return res.status(400).json({ error: "Quote has no item to convert" });
       }
 
-      const sizes = await dbAll(
-        `
-          SELECT *
-          FROM quote_item_sizes
-          WHERE quote_item_id = ?
-          ORDER BY id ASC
-        `,
-        [item.id]
-      );
+      const itemDetails = [];
+
+      for (const item of items) {
+        const sizes = await dbAll(
+          `
+            SELECT *
+            FROM quote_item_sizes
+            WHERE quote_item_id = ?
+            ORDER BY id ASC
+          `,
+          [item.id]
+        );
+        itemDetails.push({ item, sizes });
+      }
 
       const orderNumber = await getNextOrderNumberInOpenTransaction();
-      const itemsSummary = buildItemsSummaryFromQuoteItem(item, sizes);
-      const notes = buildNotesFromQuote(quote, item);
+      const itemsSummary = itemDetails
+        .map(({ item, sizes }) => buildItemsSummaryFromQuoteItem(item, sizes))
+        .join("; ");
+      const notes = buildNotesFromQuote(quote, itemDetails);
+      const printTypes = [...new Set(items.map((item) => item.print_type))];
 
       const jobResult = await dbRun(
         `
@@ -3459,7 +3756,7 @@ app.post("/api/quotes/:id/convert-to-order", async (req, res) => {
           quote.customer_name,
           itemsSummary,
           quote.total_quantity,
-          item.print_type,
+          printTypes.length === 1 ? printTypes[0] : "Mixed",
           "in_the_hole",
           0,
           0,

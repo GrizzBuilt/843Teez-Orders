@@ -21,9 +21,9 @@ const QUOTE_SIZES = [
 ];
 
 const quoteForm = document.getElementById("quote-form");
-const blankSelect = document.getElementById("shirt_blank_id");
-const sizeGrid = document.getElementById("size-grid");
-const quantityTotal = document.getElementById("quantity-total");
+const garmentBlocks = document.getElementById("garment-blocks");
+const garmentTotal = document.getElementById("garment-total");
+const addGarmentBtn = document.getElementById("add-garment-btn");
 const quoteError = document.getElementById("quote-error");
 const quoteSummaryContent = document.getElementById("quote-summary-content");
 const quoteList = document.getElementById("quote-list");
@@ -69,6 +69,7 @@ let editingQuoteId = null;
 let lastCalculation = null;
 let quoteBlanks = [];
 let isSleeveSelected = false;
+let nextGarmentBlockId = 1;
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -239,84 +240,32 @@ async function parseApiResponse(response, fallbackMessage) {
   return data;
 }
 
-function renderSizeInputs() {
-  if (!sizeGrid) return;
-
-  const selectedBlank = quoteBlanks.find(
-    (blank) => String(blank.id) === String(blankSelect?.value || "")
-  );
-  const availability = selectedBlank?.size_availability || {};
-
-  sizeGrid.innerHTML = QUOTE_SIZES.map(
-    (size) => {
-      const isAvailable = availability[size] == null
-        ? true
-        : Number(availability[size]) === 1;
-
-      return `
-      <label class="size-field ${isAvailable ? "" : "size-field-unavailable"}">
-        <span>${escapeHtml(size)}</span>
-        <div class="size-stepper">
-          <button
-            type="button"
-            class="size-step-btn"
-            data-size-step="-1"
-            aria-label="Decrease ${escapeHtml(size)} quantity"
-            ${isAvailable ? "" : "disabled"}
-          >-</button>
-          <input
-            type="number"
-            min="0"
-            step="1"
-            inputmode="numeric"
-            value="0"
-            data-size="${escapeHtml(size)}"
-            aria-label="${escapeHtml(size)} quantity"
-            ${isAvailable ? "" : "disabled"}
-          />
-          <button
-            type="button"
-            class="size-step-btn"
-            data-size-step="1"
-            aria-label="Increase ${escapeHtml(size)} quantity"
-            ${isAvailable ? "" : "disabled"}
-          >+</button>
-        </div>
-        ${isAvailable ? "" : `<small>Unavailable</small>`}
-      </label>
-    `;
-    }
-  ).join("");
-
-  sizeGrid.querySelectorAll("input[data-size]").forEach((input) => {
-    input.addEventListener("input", updateQuantityTotal);
-  });
-
-  sizeGrid.querySelectorAll("[data-size-step]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const input = button
-        .closest(".size-field")
-        ?.querySelector("input[data-size]");
-
-      if (!input || input.disabled) return;
-
-      const nextValue = Math.max(
-        0,
-        Math.floor(Number(input.value) || 0) + Number(button.dataset.sizeStep)
-      );
-
-      input.value = String(nextValue);
-      updateQuantityTotal();
-    });
-  });
-
-  updateQuantityTotal();
+function getDefaultBlankId() {
+  return quoteBlanks.find(
+    (blank) => String(blank.style_number || "").toUpperCase() === "PC43"
+  )?.id || "";
 }
 
-function getSizeQuantities() {
+function renderBlankOptions(selectedBlankId) {
+  return `
+    <option value="">Select a blank</option>
+    ${quoteBlanks
+      .map(
+        (blank) => `
+          <option value="${escapeHtml(blank.id)}" ${String(blank.id) === String(selectedBlankId) ? "selected" : ""}>
+            ${escapeHtml(blank.brand)} ${escapeHtml(blank.style_number)} - ${escapeHtml(blank.name)}
+            (${formatMoney(blank.base_cost_cents)})
+          </option>
+        `
+      )
+      .join("")}
+  `;
+}
+
+function getBlockSizeQuantities(block) {
   const sizes = {};
 
-  sizeGrid?.querySelectorAll("input[data-size]").forEach((input) => {
+  block?.querySelectorAll("input[data-size]").forEach((input) => {
     sizes[input.dataset.size] = input.disabled
       ? 0
       : Math.max(0, Math.floor(Number(input.value) || 0));
@@ -325,18 +274,124 @@ function getSizeQuantities() {
   return sizes;
 }
 
-function getTotalQuantity() {
-  return Object.values(getSizeQuantities()).reduce(
-    (sum, quantity) => sum + quantity,
-    0
+function renderGarmentSizeInputs(block, savedSizes = {}) {
+  const sizeGrid = block?.querySelector(".size-grid");
+  const blankId = block?.querySelector(".garment-blank-select")?.value || "";
+  const selectedBlank = quoteBlanks.find(
+    (blank) => String(blank.id) === String(blankId)
+  );
+  const availability = selectedBlank?.size_availability || {};
+
+  if (!sizeGrid) return;
+
+  sizeGrid.innerHTML = QUOTE_SIZES.map((size) => {
+    const isAvailable = availability[size] == null
+      ? true
+      : Number(availability[size]) === 1;
+    const quantity = isAvailable
+      ? Math.max(0, Math.floor(Number(savedSizes[size]) || 0))
+      : 0;
+
+    return `
+      <label class="size-field ${isAvailable ? "" : "size-field-unavailable"}">
+        <span>${escapeHtml(size)}</span>
+        <div class="size-stepper">
+          <button type="button" class="size-step-btn" data-size-step="-1" aria-label="Decrease ${escapeHtml(size)} quantity" ${isAvailable ? "" : "disabled"}>-</button>
+          <input type="number" min="0" step="1" inputmode="numeric" value="${quantity}" data-size="${escapeHtml(size)}" aria-label="${escapeHtml(size)} quantity" ${isAvailable ? "" : "disabled"} />
+          <button type="button" class="size-step-btn" data-size-step="1" aria-label="Increase ${escapeHtml(size)} quantity" ${isAvailable ? "" : "disabled"}>+</button>
+        </div>
+        ${isAvailable ? "" : `<small>Unavailable</small>`}
+      </label>
+    `;
+  }).join("");
+
+  updateQuantityTotals();
+}
+
+function addGarmentBlock(item = {}) {
+  if (!garmentBlocks) return null;
+
+  const blockId = nextGarmentBlockId++;
+  const selectedBlankId = item.shirt_blank_id || getDefaultBlankId();
+  const savedSizes = Array.isArray(item.sizes)
+    ? Object.fromEntries(item.sizes.map((size) => [size.size_label, size.quantity]))
+    : item.sizes || {};
+  const block = document.createElement("article");
+  block.className = "garment-block";
+  block.dataset.garmentId = String(blockId);
+  block.innerHTML = `
+    <div class="garment-block-heading">
+      <h4>Shirt Style <span class="garment-number"></span></h4>
+      <button type="button" class="garment-remove-btn" aria-label="Remove this shirt style">Remove</button>
+    </div>
+    <div class="quote-grid">
+      <label class="quote-field quote-field-wide">
+        <span>Garment Style / Type</span>
+        <select class="garment-blank-select" required>${renderBlankOptions(selectedBlankId)}</select>
+      </label>
+      <label class="quote-field quote-field-wide">
+        <span>Shirt Color or Colors</span>
+        <input type="text" class="garment-color-input" value="${escapeHtml(item.color || "")}" placeholder="Navy Blue and Gray" />
+      </label>
+    </div>
+    <div class="garment-size-heading">
+      <strong>Size Quantities</strong>
+      <span class="quote-count-pill garment-quantity-total">0 total</span>
+    </div>
+    <div class="size-grid"></div>
+    <label class="quote-field garment-notes-field">
+      <span>Notes for This Style <small>(optional)</small></span>
+      <textarea class="garment-notes-input" rows="2" placeholder="Fit, decoration, or other details...">${escapeHtml(item.style_notes || "")}</textarea>
+    </label>
+  `;
+  garmentBlocks.append(block);
+  renderGarmentSizeInputs(block, savedSizes);
+  updateGarmentBlockLabels();
+  return block;
+}
+
+function updateGarmentBlockLabels() {
+  const blocks = [...(garmentBlocks?.querySelectorAll(".garment-block") || [])];
+
+  blocks.forEach((block, index) => {
+    const number = block.querySelector(".garment-number");
+    const removeButton = block.querySelector(".garment-remove-btn");
+    if (number) number.textContent = String(index + 1);
+    if (removeButton) removeButton.hidden = blocks.length === 1;
+  });
+
+  if (addGarmentBtn) addGarmentBtn.disabled = blocks.length >= 12;
+}
+
+function getGarmentItems() {
+  return [...(garmentBlocks?.querySelectorAll(".garment-block") || [])].map(
+    (block) => ({
+      shirt_blank_id: Number(
+        block.querySelector(".garment-blank-select")?.value || 0
+      ),
+      color: String(block.querySelector(".garment-color-input")?.value || "").trim(),
+      style_notes: String(block.querySelector(".garment-notes-input")?.value || "").trim(),
+      print_type: printTypeSelect?.value || "DTF",
+      placements: getSelectedPlacements(),
+      sizes: getBlockSizeQuantities(block),
+    })
   );
 }
 
-function updateQuantityTotal() {
-  if (!quantityTotal) return;
+function updateQuantityTotals() {
+  let grandTotal = 0;
 
-  const total = getTotalQuantity();
-  quantityTotal.textContent = `${total} total`;
+  garmentBlocks?.querySelectorAll(".garment-block").forEach((block) => {
+    const total = Object.values(getBlockSizeQuantities(block)).reduce(
+      (sum, quantity) => sum + quantity,
+      0
+    );
+    const totalLabel = block.querySelector(".garment-quantity-total");
+    if (totalLabel) totalLabel.textContent = `${total} total`;
+    grandTotal += total;
+  });
+
+  if (garmentTotal) garmentTotal.textContent = `${grandTotal} total`;
   invalidateCalculation();
 }
 
@@ -371,6 +426,7 @@ function getSelectedPlacements() {
 
 function getQuotePayload() {
   const formData = new FormData(quoteForm);
+  const items = getGarmentItems();
 
   const payload = {
     customer_name: String(formData.get("customer_name") || "").trim(),
@@ -393,13 +449,8 @@ function getQuotePayload() {
       ),
       quoted_total_cents: dollarsToOptionalCents(formData.get("quoted_total")),
     },
-    item: {
-      shirt_blank_id: Number(formData.get("shirt_blank_id") || 0),
-      color: String(formData.get("color") || "").trim(),
-      print_type: String(formData.get("print_type") || "DTF"),
-      placements: getSelectedPlacements(),
-      sizes: getSizeQuantities(),
-    },
+    items,
+    item: items[0],
   };
 
   console.log("QUOTE PAYLOAD", payload);
@@ -408,21 +459,27 @@ function getQuotePayload() {
 
 function getMissingQuoteInputMessage() {
   const payload = getQuotePayload();
-  const totalQuantity = Object.values(payload.item.sizes || {}).reduce(
-    (sum, quantity) => sum + (Number(quantity) || 0),
-    0
-  );
-
-  if (!payload.item.shirt_blank_id) {
-    return "Choose a shirt blank before calculating.";
+  if (!payload.items.length) {
+    return "Add at least one shirt style before calculating.";
   }
 
-  if (!payload.item.placements.some((placement) => placement !== "sleeve")) {
+  if (!payload.items[0]?.placements.some((placement) => placement !== "sleeve")) {
     return "Choose a print placement before calculating.";
   }
 
-  if (totalQuantity < 1) {
-    return "Enter at least one shirt quantity before calculating.";
+  for (const [index, item] of payload.items.entries()) {
+    if (!item.shirt_blank_id) {
+      return `Choose a garment style for Shirt Style ${index + 1}.`;
+    }
+
+    const totalQuantity = Object.values(item.sizes || {}).reduce(
+      (sum, quantity) => sum + (Number(quantity) || 0),
+      0
+    );
+
+    if (totalQuantity < 1) {
+      return `Enter at least one quantity for Shirt Style ${index + 1}.`;
+    }
   }
 
   if (
@@ -439,6 +496,7 @@ function getMissingQuoteInputMessage() {
 function renderCalculation(calculation) {
   const totals = calculation?.totals;
   const item = calculation?.item;
+  const calculationItems = calculation?.items || (item ? [item] : []);
 
   if (!quoteSummaryContent || !totals || !item) return;
 
@@ -480,6 +538,37 @@ function renderCalculation(calculation) {
         `+${formatMoney(size.customer_blank_upgrade_total_cents)}`
       )
     )
+    .join("");
+  const garmentPricingSections = calculationItems
+    .map((garment, index) => {
+      const garmentSizes = (garment.sizes || [])
+        .filter((size) => Number(size.quantity) > 0)
+        .map((size) => `${size.size_label}: ${size.quantity}`)
+        .join(", ");
+      const garmentDebug = garment.pricing_debug || {};
+      const garmentUpgradeTotal =
+        Number(garment.customer_blank_upgrade_total_cents) || 0;
+      const garmentSleeveTotal = Number(garment.sleeve_add_on_total_cents) || 0;
+
+      return `
+        <article class="calculated-garment">
+          <div class="calculated-garment-heading">
+            <div>
+              <strong>${index + 1}. ${escapeHtml(garment.blank_label)}</strong>
+              <span>${escapeHtml(garment.color ? `Color(s): ${garment.color}` : "Color not set")}</span>
+            </div>
+            <span>${escapeHtml(garment.total_quantity)} total</span>
+          </div>
+          <p>${escapeHtml(garmentSizes || "Sizes not set")}</p>
+          ${renderQuoteTotalRow("Base Tier Price", formatMoney(garment.base_deal_subtotal_cents))}
+          ${garmentUpgradeTotal > 0 ? renderQuoteTotalRow("Size / Blank Upgrades", `+${formatMoney(garmentUpgradeTotal)}`) : ""}
+          ${garmentSleeveTotal > 0 ? renderQuoteTotalRow("Sleeve Add-On", `+${formatMoney(garmentSleeveTotal)}`) : ""}
+          ${renderQuoteTotalRow("Style Subtotal", formatMoney(garment.total_price_cents), "quote-grand-total")}
+          ${garment.style_notes ? `<p class="calculated-garment-notes">${escapeHtml(garment.style_notes)}</p>` : ""}
+          <span class="calculated-garment-deal">${escapeHtml(garment.pricing_label || garmentDebug.pricingLabel || "")}</span>
+        </article>
+      `;
+    })
     .join("");
   const dealRows = [
     pricingLabel
@@ -558,19 +647,13 @@ function renderCalculation(calculation) {
     <section class="customer-price-card">
       <div class="customer-price-heading">
         <span>Customer Price</span>
-        <strong>${escapeHtml(pricingLabel || formatMoney(baseDealSubtotalCents))}</strong>
+        <strong>${calculationItems.length > 1 ? `${calculationItems.length} shirt styles` : escapeHtml(pricingLabel || formatMoney(baseDealSubtotalCents))}</strong>
       </div>
-      ${renderQuoteTotalRow("Base Tier Price", formatMoney(baseDealSubtotalCents))}
-      ${
-        customerBlankUpgradeTotalCents > 0
-          ? `<div class="customer-upgrade-breakdown"><h3>Size / Blank Upgrades</h3>${sizeUpgradeRows || renderQuoteTotalRow("Blank Upgrade", `+${formatMoney(customerBlankUpgradeTotalCents)}`)}</div>`
-          : ""
-      }
-      ${
-        sleeveAddOnTotalCents > 0
-          ? renderQuoteTotalRow("Sleeve Add-On", `+${formatMoney(sleeveAddOnTotalCents)}`)
-          : ""
-      }
+      ${calculationItems.length > 1 ? garmentPricingSections : `
+        ${renderQuoteTotalRow("Base Tier Price", formatMoney(baseDealSubtotalCents))}
+        ${customerBlankUpgradeTotalCents > 0 ? `<div class="customer-upgrade-breakdown"><h3>Size / Blank Upgrades</h3>${sizeUpgradeRows || renderQuoteTotalRow("Blank Upgrade", `+${formatMoney(customerBlankUpgradeTotalCents)}`)}</div>` : ""}
+        ${sleeveAddOnTotalCents > 0 ? renderQuoteTotalRow("Sleeve Add-On", `+${formatMoney(sleeveAddOnTotalCents)}`) : ""}
+      `}
       ${renderQuoteTotalRow("Final Quote", formatMoney(totals.total_price_cents), "quote-grand-total")}
     </section>
     <section class="recommended-price-card margin-${escapeHtml(marginStatus)}">
@@ -671,33 +754,23 @@ function setBusyState() {
 async function loadBlanks() {
   const response = await fetch("/api/shirt-blanks");
   const blanks = await parseApiResponse(response, "Failed to load shirt blanks");
-  quoteBlanks = blanks;
-
-  if (!blankSelect) return;
-
-  blankSelect.innerHTML = `
-    <option value="">Select a blank</option>
-    ${blanks
-      .map(
-        (blank) => `
-          <option value="${escapeHtml(blank.id)}">
-            ${escapeHtml(blank.brand)} ${escapeHtml(blank.style_number)} - ${escapeHtml(blank.name)}
-            (${formatMoney(blank.base_cost_cents)})
-          </option>
-        `
-      )
-      .join("")}
-  `;
-
-  const pc43 = blanks.find(
-    (blank) => String(blank.style_number || "").toUpperCase() === "PC43"
+  const savedOnlyBlanks = quoteBlanks.filter(
+    (savedBlank) =>
+      !blanks.some((blank) => String(blank.id) === String(savedBlank.id))
   );
+  quoteBlanks = [...blanks, ...savedOnlyBlanks];
 
-  if (pc43 && !blankSelect.value) {
-    blankSelect.value = String(pc43.id);
+  if (!garmentBlocks?.querySelector(".garment-block")) {
+    addGarmentBlock();
+    return;
   }
 
-  renderSizeInputs();
+  garmentBlocks.querySelectorAll(".garment-block").forEach((block) => {
+    const select = block.querySelector(".garment-blank-select");
+    const selectedValue = select?.value || getDefaultBlankId();
+    if (select) select.innerHTML = renderBlankOptions(selectedValue);
+    renderGarmentSizeInputs(block, getBlockSizeQuantities(block));
+  });
 }
 
 async function calculateQuote() {
@@ -788,7 +861,8 @@ function resetQuoteForm() {
   isSleeveSelected = false;
   syncSleeveToggleUi();
   syncPrintTypeUi();
-  renderSizeInputs();
+  if (garmentBlocks) garmentBlocks.innerHTML = "";
+  addGarmentBlock();
   closeSavePanel();
   lastCalculation = null;
   updateMobileQuoteBar();
@@ -797,20 +871,15 @@ function resetQuoteForm() {
 }
 
 function ensureBlankOption(item) {
-  if (!blankSelect || !item?.shirt_blank_id) return;
+  if (!item?.shirt_blank_id) return;
+  if (quoteBlanks.some((blank) => String(blank.id) === String(item.shirt_blank_id))) return;
 
-  const value = String(item.shirt_blank_id);
-
-  if (blankSelect.querySelector(`option[value="${CSS.escape(value)}"]`)) {
-    return;
-  }
-
-  const option = document.createElement("option");
-  option.value = value;
-  option.textContent = item.blank_label || `Blank #${value}`;
-  blankSelect.append(option);
   quoteBlanks.push({
     id: item.shirt_blank_id,
+    brand: "Saved",
+    style_number: item.blank_label || `Blank #${item.shirt_blank_id}`,
+    name: "",
+    base_cost_cents: item.blank_base_cost_cents || 0,
     size_availability: {},
   });
 }
@@ -826,27 +895,28 @@ async function editQuoteDraft(quoteId) {
       throw new Error("Only draft quotes can be edited");
     }
 
-    const item = quote.items?.[0];
+    const items = quote.items || [];
+    const item = items[0];
 
     if (!item) {
       throw new Error("Quote has no item to edit");
     }
 
     editingQuoteId = quote.id;
-    ensureBlankOption(item);
+    items.forEach(ensureBlankOption);
     setFormValue("customer_name", quote.customer_name);
     setFormValue("customer_email", quote.customer_email);
     setFormValue("customer_phone", quote.customer_phone);
     setFormValue("due_date", quote.due_date);
     setFormValue("notes", quote.notes);
-    setFormValue("shirt_blank_id", item.shirt_blank_id);
-    setFormValue("color", item.color);
     setFormValue("print_type", item.print_type);
 
     if (Number(quote.total_landed_cost_cents) > 0) {
       setFormValue(
         "shirt_blank_cost",
-        centsToDollarInput(quote.landed_shirt_blank_cost_cents, true)
+        items.length === 1
+          ? centsToDollarInput(quote.landed_shirt_blank_cost_cents, true)
+          : ""
       );
       setFormValue(
         "shirt_shipping",
@@ -874,7 +944,10 @@ async function editQuoteDraft(quoteId) {
         centsToDollarInput(quote.setup_labor_cost_cents, true)
       );
       setFormValue("quoted_price_per_shirt", "");
-      setFormValue("quoted_total", centsToDollarInput(quote.total_price_cents));
+      setFormValue(
+        "quoted_total",
+        items.length === 1 ? centsToDollarInput(quote.total_price_cents) : ""
+      );
     }
 
     const placements = item.placements || [];
@@ -886,19 +959,9 @@ async function editQuoteDraft(quoteId) {
     syncSleeveToggleUi();
     syncPrintTypeUi();
 
-    renderSizeInputs();
-
-    (item.sizes || []).forEach((size) => {
-      const input = sizeGrid?.querySelector(
-        `input[data-size="${CSS.escape(size.size_label)}"]`
-      );
-
-      if (input) {
-        input.value = size.quantity;
-      }
-    });
-
-    updateQuantityTotal();
+    if (garmentBlocks) garmentBlocks.innerHTML = "";
+    items.forEach((quoteItem) => addGarmentBlock(quoteItem));
+    updateQuantityTotals();
     quoteSummaryContent.innerHTML = `<p class="quote-muted">Editing draft quote #${escapeHtml(quote.id)}.</p>`;
     lastCalculation = null;
     openSavePanel();
@@ -998,27 +1061,36 @@ function renderSavedPricingSafety(quote) {
 function renderQuoteDetail(quote) {
   if (!quoteDetail) return;
 
-  const item = quote.items?.[0];
+  const items = quote.items || [];
   const canEdit = quote.status === "draft" && !quote.converted_job_id;
   const finalAveragePerShirtCents = getFinalAveragePerShirtCents(quote);
-  const placements = (item?.placements || [])
-    .map((placement) =>
-      String(placement)
-        .replaceAll("_", " ")
-        .replace(/\b\w/g, (letter) => letter.toUpperCase())
-    )
-    .join(", ");
-  const sizeRows = (item?.sizes || [])
-    .filter((size) => Number(size.quantity) > 0)
-    .map(
-      (size) => `
-        <div class="quote-detail-size">
-          <span>${escapeHtml(size.size_label)}</span>
-          <strong>${escapeHtml(size.quantity)}</strong>
+  const itemSections = items.map((item, index) => {
+    const placements = (item.placements || [])
+      .map((placement) =>
+        String(placement)
+          .replaceAll("_", " ")
+          .replace(/\b\w/g, (letter) => letter.toUpperCase())
+      )
+      .join(", ");
+    const sizes = (item.sizes || [])
+      .filter((size) => Number(size.quantity) > 0)
+      .map((size) => `${size.size_label}: ${size.quantity}`)
+      .join(", ");
+
+    return `
+      <article class="quote-detail-item">
+        <div class="quote-card-heading">
+          <h3>${index + 1}. ${escapeHtml(item.blank_label || "Shirt style")}</h3>
+          <span class="quote-count-pill">${escapeHtml(item.total_quantity)} total</span>
         </div>
-      `
-    )
-    .join("");
+        ${renderQuoteTotalRow("Color(s)", item.color || "Not set")}
+        ${renderQuoteTotalRow("Sizes", sizes || "Not set")}
+        ${renderQuoteTotalRow("Print", [item.print_type, placements].filter(Boolean).join(" - ") || "Not set")}
+        ${renderQuoteTotalRow("Style Subtotal", formatMoney(item.total_price_cents))}
+        ${item.style_notes ? `<div class="quote-detail-notes">${escapeHtml(item.style_notes)}</div>` : ""}
+      </article>
+    `;
+  }).join("");
 
   quoteDetail.innerHTML = `
     <div class="quote-detail-header">
@@ -1052,17 +1124,8 @@ function renderQuoteDetail(quote) {
       <strong>Contact</strong>
       <span>${escapeHtml([quote.customer_email, quote.customer_phone].filter(Boolean).join(" - ") || "Not set")}</span>
     </div>
-    <div class="quote-total-row">
-      <strong>Blank</strong>
-      <span>${escapeHtml(item?.blank_label || "Not set")}</span>
-    </div>
-    <div class="quote-total-row">
-      <strong>Color</strong>
-      <span>${escapeHtml(item?.color || "Not set")}</span>
-    </div>
-    <div class="quote-total-row">
-      <strong>Print</strong>
-      <span>${escapeHtml([item?.print_type, placements].filter(Boolean).join(" - ") || "Not set")}</span>
+    <div class="quote-detail-items">
+      ${itemSections || `<p class="quote-muted">No shirt styles saved.</p>`}
     </div>
     <div class="quote-total-row">
       <strong>Total Qty</strong>
@@ -1082,10 +1145,6 @@ function renderQuoteDetail(quote) {
     </div>
 
     ${renderSavedPricingSafety(quote)}
-
-    <div class="quote-detail-sizes">
-      ${sizeRows || `<p class="quote-muted">No sizes saved.</p>`}
-    </div>
 
     ${
       quote.notes
@@ -1327,7 +1386,70 @@ quoteForm?.addEventListener("input", (event) => {
     setFormValue("quoted_price_per_shirt", "");
   }
 
-  if (pricingFieldNames.has(target?.name) || target?.dataset?.size) {
+  if (
+    pricingFieldNames.has(target?.name) ||
+    target?.dataset?.size ||
+    target?.closest?.(".garment-block")
+  ) {
+    invalidateCalculation();
+  }
+});
+
+addGarmentBtn?.addEventListener("click", () => {
+  const blockCount = garmentBlocks?.querySelectorAll(".garment-block").length || 0;
+  if (blockCount >= 12) return;
+  if (blockCount === 1) {
+    setFormValue("shirt_blank_cost", "");
+    setFormValue("quoted_total", "");
+  }
+  addGarmentBlock();
+  invalidateCalculation();
+  garmentBlocks?.lastElementChild?.scrollIntoView({
+    behavior: "smooth",
+    block: "nearest",
+  });
+});
+
+garmentBlocks?.addEventListener("click", (event) => {
+  const stepButton = event.target.closest("[data-size-step]");
+
+  if (stepButton) {
+    const input = stepButton
+      .closest(".size-field")
+      ?.querySelector("input[data-size]");
+    if (!input || input.disabled) return;
+    input.value = String(
+      Math.max(
+        0,
+        Math.floor(Number(input.value) || 0) + Number(stepButton.dataset.sizeStep)
+      )
+    );
+    updateQuantityTotals();
+    return;
+  }
+
+  const removeButton = event.target.closest(".garment-remove-btn");
+  if (removeButton) {
+    removeButton.closest(".garment-block")?.remove();
+    updateGarmentBlockLabels();
+    updateQuantityTotals();
+  }
+});
+
+garmentBlocks?.addEventListener("input", (event) => {
+  if (event.target.matches("input[data-size]")) {
+    event.target.value = String(
+      Math.max(0, Math.floor(Number(event.target.value) || 0))
+    );
+    updateQuantityTotals();
+  }
+});
+
+garmentBlocks?.addEventListener("change", (event) => {
+  if (event.target.matches(".garment-blank-select")) {
+    const block = event.target.closest(".garment-block");
+    const quantities = getBlockSizeQuantities(block);
+    renderGarmentSizeInputs(block, quantities);
     invalidateCalculation();
   }
 });
@@ -1359,14 +1481,6 @@ printTypeSelect?.addEventListener("change", () => {
   invalidateCalculation();
 });
 
-quoteForm?.addEventListener("change", (event) => {
-  const target = event.target;
-
-  if (target?.name === "shirt_blank_id") {
-    invalidateCalculation();
-  }
-});
-
 quoteForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   await saveQuote();
@@ -1384,24 +1498,8 @@ quoteSearch?.addEventListener("input", () => {
 
 quoteStatusFilter?.addEventListener("change", loadQuotes);
 
-blankSelect?.addEventListener("change", () => {
-  const quantities = getSizeQuantities();
-  renderSizeInputs();
-
-  sizeGrid?.querySelectorAll("input[data-size]").forEach((input) => {
-    const quantity = quantities[input.dataset.size] || 0;
-    if (!input.disabled) {
-      input.value = quantity;
-    }
-  });
-
-  updateQuantityTotal();
-  invalidateCalculation();
-});
-
 syncSleeveToggleUi();
 syncPrintTypeUi();
-renderSizeInputs();
 updateMobileQuoteBar();
 setBusyState();
 loadBlanks().catch((error) => showQuoteError(error.message));

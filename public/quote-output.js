@@ -85,8 +85,8 @@ function getQuoteIdFromPath() {
 }
 
 function renderQuote(quote) {
-  const item = quote.items?.[0] || {};
-  const finalAveragePerShirtCents = getFinalAveragePerShirtCents(quote);
+  const items = quote.items || [];
+  const item = items[0] || {};
   const contactRows = [quote.customer_email, quote.customer_phone]
     .filter(Boolean)
     .map((value) => `<p>${escapeHtml(value)}</p>`)
@@ -95,10 +95,27 @@ function renderQuote(quote) {
     .map((placement) => PLACEMENT_LABELS[placement] || placement)
     .filter(Boolean)
     .join(", ");
-  const sizes = (item.sizes || []).filter((size) => Number(size.quantity) > 0);
-  const sizeSummary = sizes
-    .map((size) => `${size.size_label}: ${size.quantity}`)
-    .join(", ");
+  const itemRows = items.map((quoteItem, index) => {
+    const sizes = (quoteItem.sizes || [])
+      .filter((size) => Number(size.quantity) > 0)
+      .map((size) => `${size.size_label}: ${size.quantity}`)
+      .join(", ");
+    const itemUnitPriceCents = getFinalAveragePerShirtCents(quoteItem);
+
+    return `
+      <tr>
+        <td>
+          <strong>${index + 1}. ${escapeHtml(quoteItem.blank_label || "Custom shirts")}</strong>
+          <p>Color(s): ${escapeHtml(quoteItem.color || "Not set")}</p>
+          <p>Sizes: ${escapeHtml(sizes || "Not set")}</p>
+          ${quoteItem.style_notes ? `<p>Notes: ${escapeHtml(quoteItem.style_notes)}</p>` : ""}
+        </td>
+        <td>${escapeHtml(quoteItem.total_quantity)}</td>
+        <td>${formatMoney(itemUnitPriceCents)}</td>
+        <td>${formatMoney(quoteItem.total_price_cents)}</td>
+      </tr>
+    `;
+  }).join("");
 
   output.innerHTML = `
     <section class="quote-output-header">
@@ -125,11 +142,11 @@ function renderQuote(quote) {
         <h3>Quote Details</h3>
         <p>${escapeHtml(item.print_type || "Print")} apparel order</p>
         <p>${escapeHtml(placements || "Placement not set")}</p>
-        <p>${escapeHtml(item.color ? `Color: ${item.color}` : "Color not set")}</p>
+        <p>${escapeHtml(`${items.length || 1} shirt style${items.length === 1 ? "" : "s"}`)}</p>
       </div>
 
       <div class="quote-output-section full">
-        <h3>Items</h3>
+        <h3>Shirt Styles &amp; Sizes</h3>
         <table class="quote-output-table">
           <thead>
             <tr>
@@ -139,21 +156,11 @@ function renderQuote(quote) {
               <th>Total</th>
             </tr>
           </thead>
-          <tbody>
-            <tr>
-              <td>
-                <strong>${escapeHtml(item.blank_label || "Custom shirts")}</strong>
-                <p>${escapeHtml(sizeSummary || "Sizes not set")}</p>
-              </td>
-              <td>${escapeHtml(quote.total_quantity)}</td>
-              <td>${formatMoney(finalAveragePerShirtCents)}</td>
-              <td>${formatMoney(quote.total_price_cents)}</td>
-            </tr>
-          </tbody>
+          <tbody>${itemRows}</tbody>
         </table>
 
         <div class="quote-output-total">
-          <span>Total</span>
+          <span>Total Garments: ${escapeHtml(quote.total_quantity)}</span>
           <span>${formatMoney(quote.total_price_cents)}</span>
         </div>
       </div>
