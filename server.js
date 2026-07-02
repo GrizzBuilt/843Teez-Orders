@@ -1317,14 +1317,19 @@ const QUOTE_PLACEMENTS = {
 };
 
 const SLEEVE_ADD_ON_PRICE_CENTS = 300;
+const GENERAL_TARGET_MARGIN_BASIS_POINTS = 4000;
+const IN_HOUSE_DTF_TARGET_MARGIN_BASIS_POINTS = 4500;
+const OUTSOURCED_DTF_PREFERRED_MARGIN_BASIS_POINTS = 4500;
+const MINIMUM_PROFIT_PER_SHIRT_CENTS = 500;
+const OUTSOURCED_DTF_PREFERRED_PROFIT_CENTS = 600;
 
 const QUOTE_PROFIT_PROTECTION_TIERS = [
-  { min: 1, max: 4, target_margin_basis_points: 5000, minimum_profit_cents: 1200 },
-  { min: 5, max: 9, target_margin_basis_points: 4500, minimum_profit_cents: 900 },
-  { min: 10, max: 24, target_margin_basis_points: 4000, minimum_profit_cents: 700 },
-  { min: 25, max: 49, target_margin_basis_points: 3500, minimum_profit_cents: 500 },
-  { min: 50, max: 99, target_margin_basis_points: 3000, minimum_profit_cents: 400 },
-  { min: 100, max: null, target_margin_basis_points: 2800, minimum_profit_cents: 300 },
+  { min: 1, max: 4, protected_profit_floor_cents: 1200 },
+  { min: 5, max: 9, protected_profit_floor_cents: 900 },
+  { min: 10, max: 24, protected_profit_floor_cents: 700 },
+  { min: 25, max: 49, protected_profit_floor_cents: 600 },
+  { min: 50, max: 99, protected_profit_floor_cents: 550 },
+  { min: 100, max: null, protected_profit_floor_cents: 500 },
 ];
 
 const DTF_PRINT_SOURCES = {
@@ -1377,12 +1382,41 @@ function normalizeDtfPrintSource(value) {
     : "";
 }
 
+function getMarginStatusFromBasisPoints(grossMarginBasisPoints) {
+  if (grossMarginBasisPoints < 3000) return "too_low";
+  if (grossMarginBasisPoints < 3500) return "weak";
+  if (grossMarginBasisPoints < 4000) return "tight";
+  if (grossMarginBasisPoints < 4500) return "healthy";
+  if (grossMarginBasisPoints < 5000) return "strong";
+  return "excellent";
+}
+
+function getProfitProtectionSettings(tier, printType, dtfSource) {
+  const isInHouseDtf = printType === "DTF" && dtfSource === "in_house_dtf";
+
+  return {
+    ...tier,
+    target_margin_basis_points: isInHouseDtf
+      ? IN_HOUSE_DTF_TARGET_MARGIN_BASIS_POINTS
+      : GENERAL_TARGET_MARGIN_BASIS_POINTS,
+    minimum_profit_cents: MINIMUM_PROFIT_PER_SHIRT_CENTS,
+    preferred_margin_basis_points:
+      printType === "DTF" && dtfSource === "outsourced_dtf"
+        ? OUTSOURCED_DTF_PREFERRED_MARGIN_BASIS_POINTS
+        : null,
+    preferred_profit_cents:
+      printType === "DTF" && dtfSource === "outsourced_dtf"
+        ? OUTSOURCED_DTF_PREFERRED_PROFIT_CENTS
+        : null,
+  };
+}
+
 function calculateProfitProtectionMetrics({
   totalQuantity,
   totalLandedCostCents,
   quotedTotalCents,
   tier,
-  sizeUpchargeTotalCents = 0,
+  protectedFloorTotalCents = 0,
 }) {
   const landedCostPerShirtRaw = totalLandedCostCents / totalQuantity;
   const landedCostPerShirtCents = Math.round(landedCostPerShirtRaw);
@@ -1396,12 +1430,30 @@ function calculateProfitProtectionMetrics({
   const profitPricePerShirtCents = Math.ceil(
     landedCostPerShirtRaw + minimumProfitPerShirtCents
   );
+  const protectedFloorPricePerShirtCents = Math.ceil(
+    landedCostPerShirtRaw + tier.protected_profit_floor_cents
+  );
+  const customerTierFloorPerShirtCents = Math.ceil(
+    protectedFloorTotalCents / totalQuantity
+  );
+  const manualPricePerShirtCents = quotedTotalCents == null
+    ? 0
+    : Math.ceil(quotedTotalCents / totalQuantity);
+  const protectedRecommendedRawCents = Math.max(
+    marginPricePerShirtCents,
+    profitPricePerShirtCents,
+    protectedFloorPricePerShirtCents,
+    customerTierFloorPerShirtCents
+  );
+  const protectedRecommendedPricePerShirtCents =
+    Math.ceil(protectedRecommendedRawCents / 50) * 50;
   const recommendedPricePerShirtCents =
     Math.ceil(
-      Math.max(marginPricePerShirtCents, profitPricePerShirtCents) / 50
+      Math.max(protectedRecommendedRawCents, manualPricePerShirtCents) / 50
     ) * 50;
-  const recommendedTotalCents =
-    recommendedPricePerShirtCents * totalQuantity + sizeUpchargeTotalCents;
+  const protectedRecommendedTotalCents =
+    protectedRecommendedPricePerShirtCents * totalQuantity;
+  const recommendedTotalCents = recommendedPricePerShirtCents * totalQuantity;
   const effectiveQuotedTotalCents = quotedTotalCents ?? recommendedTotalCents;
   const quotedPricePerShirtCents = Math.round(
     effectiveQuotedTotalCents / totalQuantity
@@ -1418,11 +1470,9 @@ function calculateProfitProtectionMetrics({
     ? recommendedProfitCents / recommendedTotalCents
     : 0;
   const recommendedMarginBasisPoints = Math.round(recommendedMargin * 10000);
-  const marginStatus = effectiveQuotedTotalCents >= recommendedTotalCents
-    ? "healthy"
-    : effectiveQuotedTotalCents >= recommendedTotalCents * 0.9
-      ? "tight"
-      : "too_low";
+  const marginStatus = getMarginStatusFromBasisPoints(grossMarginBasisPoints);
+  const manualPriceBelowProtected =
+    quotedTotalCents != null && quotedTotalCents < protectedRecommendedTotalCents;
 
   return {
     total_landed_cost_cents: totalLandedCostCents,
@@ -1441,6 +1491,13 @@ function calculateProfitProtectionMetrics({
     margin_based_price_cents: marginPricePerShirtCents,
     profit_price_per_shirt_cents: profitPricePerShirtCents,
     profit_floor_price_cents: profitPricePerShirtCents,
+    protected_floor_price_per_shirt_cents: protectedFloorPricePerShirtCents,
+    customer_tier_floor_per_shirt_cents: customerTierFloorPerShirtCents,
+    protected_recommended_price_per_shirt_cents:
+      protectedRecommendedPricePerShirtCents,
+    protected_recommended_total_cents: protectedRecommendedTotalCents,
+    preferred_margin_basis_points: tier.preferred_margin_basis_points,
+    preferred_profit_per_shirt_cents: tier.preferred_profit_cents,
     recommended_price_per_shirt_cents: recommendedPricePerShirtCents,
     recommended_price_cents: recommendedPricePerShirtCents,
     recommended_total_cents: recommendedTotalCents,
@@ -1448,7 +1505,9 @@ function calculateProfitProtectionMetrics({
     recommended_gross_profit_cents: recommendedProfitCents,
     recommended_margin_basis_points: recommendedMarginBasisPoints,
     margin_status: marginStatus,
-    low_margin_warning: effectiveQuotedTotalCents < recommendedTotalCents,
+    low_margin_warning:
+      effectiveQuotedTotalCents < protectedRecommendedTotalCents,
+    manual_price_below_protected: manualPriceBelowProtected,
   };
 }
 
@@ -1467,7 +1526,7 @@ function calculateQuotePricingSafety({
   const safetyInput = input?.pricing_safety && typeof input.pricing_safety === "object"
     ? input.pricing_safety
     : {};
-  const tier = getQuoteProfitProtectionTier(pricingQuantity);
+  const quantityTier = getQuoteProfitProtectionTier(pricingQuantity);
   const landedShirtBlankCostCents =
     normalizeOptionalMoneyCents(safetyInput.shirt_blank_cost_cents) ??
     calculatedBlankCostCents;
@@ -1481,6 +1540,7 @@ function calculateQuotePricingSafety({
     ? requestedDtfSource ||
       (legacyDtfPrintCostCents == null ? "in_house_dtf" : "manual_custom")
     : "not_applicable";
+  const tier = getProfitProtectionSettings(quantityTier, printType, dtfSource);
   const explicitDtfCostPerShirtCents = normalizeOptionalMoneyCents(
     safetyInput.dtf_cost_per_shirt_cents
   );
@@ -1542,7 +1602,7 @@ function calculateQuotePricingSafety({
     totalLandedCostCents,
     quotedTotalCents,
     tier,
-    sizeUpchargeTotalCents,
+    protectedFloorTotalCents: calculatedTotalPriceCents,
   });
   const fixedCostCents =
     landedShirtBlankCostCents +
@@ -1557,12 +1617,17 @@ function calculateQuotePricingSafety({
       const sourceCostPerShirtCents =
         DTF_PRINT_SOURCES[source].default_cost_per_shirt_cents;
       const sourceDtfCostTotalCents = sourceCostPerShirtCents * totalQuantity;
+      const sourceTier = getProfitProtectionSettings(
+        quantityTier,
+        printType,
+        source
+      );
       const sourceMetrics = calculateProfitProtectionMetrics({
         totalQuantity,
         totalLandedCostCents: fixedCostCents + sourceDtfCostTotalCents,
         quotedTotalCents: metrics.quoted_total_cents,
-        tier,
-        sizeUpchargeTotalCents,
+        tier: sourceTier,
+        protectedFloorTotalCents: calculatedTotalPriceCents,
       });
 
       return {
@@ -2303,12 +2368,6 @@ function sumQuoteValues(calculations, selector) {
   );
 }
 
-function getCombinedMarginStatus(quotedTotalCents, recommendedTotalCents) {
-  if (quotedTotalCents >= recommendedTotalCents) return "healthy";
-  if (quotedTotalCents >= recommendedTotalCents * 0.9) return "tight";
-  return "too_low";
-}
-
 async function calculateQuote(input) {
   const payloadVersion = Math.floor(Number(input?.quote_payload_version)) || 1;
   const requestedItems = Array.isArray(input?.items)
@@ -2442,48 +2501,44 @@ async function calculateQuote(input) {
     (sum, item) => sum + Number(item.total_quantity || 0),
     0
   );
-  const totalPriceCents = sumQuoteValues(
-    calculations,
-    (calculation) => calculation.totals.total_price_cents
-  );
   const totalLandedCostCents = sumQuoteValues(
     calculations,
     (calculation) => calculation.totals.pricing_safety.total_landed_cost_cents
   );
-  const grossProfitCents = totalPriceCents - totalLandedCostCents;
-  const recommendedTotalCents = sumQuoteValues(
-    calculations,
-    (calculation) => calculation.totals.pricing_safety.recommended_total_cents
-  );
-  const recommendedProfitCents = recommendedTotalCents - totalLandedCostCents;
-  const grossMarginBasisPoints = totalPriceCents > 0
-    ? Math.round((grossProfitCents / totalPriceCents) * 10000)
-    : 0;
-  const recommendedMarginBasisPoints = recommendedTotalCents > 0
-    ? Math.round((recommendedProfitCents / recommendedTotalCents) * 10000)
-    : 0;
-  const marginStatus = getCombinedMarginStatus(
-    totalPriceCents,
-    recommendedTotalCents
-  );
   const firstSafety = calculations[0].totals.pricing_safety;
-  const weightedSafetyValue = (field) => Math.round(
-    calculations.reduce(
-      (sum, calculation) =>
-        sum +
-        normalizeMoneyCents(calculation.totals.pricing_safety[field]) *
-          Number(calculation.totals.total_quantity || 0),
-      0
-    ) / totalQuantity
+  const protectedFloorTotalCents = sumQuoteValues(
+    calculations,
+    (calculation) => calculation.totals.pricing_debug.calculatedTotalPriceCents
   );
-  const targetMarginBasisPoints = Math.max(
-    ...calculations.map(
-      (calculation) =>
-        calculation.totals.pricing_safety.target_margin_basis_points
-    )
+  const manualPricePerShirtCents = normalizeOptionalMoneyCents(
+    sharedSafety.quoted_price_per_shirt_cents
   );
+  const combinedManualQuotedTotalCents = manualPricePerShirtCents == null
+    ? null
+    : sumQuoteValues(
+      calculations,
+      (calculation) => calculation.totals.pricing_safety.quoted_total_cents
+    );
+  const combinedTier = getProfitProtectionSettings(
+    getQuoteProfitProtectionTier(combinedPricingQuantity),
+    items[0].print_type,
+    firstSafety.dtf_source
+  );
+  const combinedMetrics = calculateProfitProtectionMetrics({
+    totalQuantity,
+    totalLandedCostCents,
+    quotedTotalCents: combinedManualQuotedTotalCents,
+    tier: combinedTier,
+    protectedFloorTotalCents,
+  });
+  const totalPriceCents = combinedMetrics.quoted_total_cents;
+  const grossProfitCents = combinedMetrics.gross_profit_cents;
+  const recommendedTotalCents = combinedMetrics.recommended_total_cents;
+  const recommendedProfitCents = combinedMetrics.recommended_profit_cents;
+  const marginStatus = combinedMetrics.margin_status;
   const pricingSafety = {
     ...firstSafety,
+    ...combinedMetrics,
     shirt_blank_cost_cents: sumQuoteValues(
       calculations,
       (calculation) => calculation.totals.pricing_safety.shirt_blank_cost_cents
@@ -2500,46 +2555,8 @@ async function calculateQuote(input) {
       calculations,
       (calculation) => calculation.totals.pricing_safety.setup_labor_cost_cents
     ),
-    total_landed_cost_cents: totalLandedCostCents,
-    landed_cost_per_shirt_cents: Math.round(
-      totalLandedCostCents / totalQuantity
-    ),
-    quoted_total_cents: totalPriceCents,
-    customer_quoted_total_cents: totalPriceCents,
-    quoted_price_per_shirt_cents: Math.round(totalPriceCents / totalQuantity),
-    gross_profit_cents: grossProfitCents,
-    gross_profit_per_shirt_cents: Math.round(grossProfitCents / totalQuantity),
-    gross_margin_basis_points: grossMarginBasisPoints,
-    gross_margin_percent: Math.round(grossMarginBasisPoints) / 100,
-    target_margin_basis_points: targetMarginBasisPoints,
-    target_gross_margin_percent: targetMarginBasisPoints / 100,
-    minimum_profit_per_shirt_cents: weightedSafetyValue(
-      "minimum_profit_per_shirt_cents"
-    ),
-    margin_price_per_shirt_cents: weightedSafetyValue(
-      "margin_price_per_shirt_cents"
-    ),
-    margin_based_price_cents: weightedSafetyValue(
-      "margin_price_per_shirt_cents"
-    ),
-    profit_price_per_shirt_cents: weightedSafetyValue(
-      "profit_price_per_shirt_cents"
-    ),
-    profit_floor_price_cents: weightedSafetyValue(
-      "profit_price_per_shirt_cents"
-    ),
-    recommended_price_per_shirt_cents: Math.round(
-      recommendedTotalCents / totalQuantity
-    ),
-    recommended_price_cents: Math.round(
-      recommendedTotalCents / totalQuantity
-    ),
-    recommended_total_cents: recommendedTotalCents,
-    recommended_profit_cents: recommendedProfitCents,
-    recommended_gross_profit_cents: recommendedProfitCents,
-    recommended_margin_basis_points: recommendedMarginBasisPoints,
-    margin_status: marginStatus,
-    low_margin_warning: totalPriceCents < recommendedTotalCents,
+    manual_price_below_protected:
+      combinedMetrics.manual_price_below_protected,
     dtf_source_comparison: [],
   };
   const combinedBasePricePerShirtCents = Math.max(

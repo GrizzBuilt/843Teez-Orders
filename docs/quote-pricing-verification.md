@@ -108,13 +108,14 @@ Expected `pricing_safety` values:
 | Gross profit per shirt | $2.31 |
 | Gross margin | 15.66% |
 | Target gross margin | 40% |
-| Minimum profit per shirt | $7.00 |
+| Minimum profit per shirt | $5.00 |
 | Margin-based price | $20.74 |
-| Profit-floor price | $19.44 |
+| Profit-floor price | $17.44 |
+| Quantity protected-floor price | $19.44 |
 | Recommended price | $21.00 |
 | Recommended total | $210.00 |
 | Recommended gross profit | $85.60 |
-| Margin status | Too Low |
+| Margin status | Bad / Too Low |
 
 For quantities above four, no manual customer price uses the protected
 recommendation as the quote total. For quantities one through four, the bundle
@@ -132,7 +133,7 @@ Validation examples for 10 shirts with no size adjustment:
 
 | Blank Cost / Shirt | DTF Source | Estimated Cost / Shirt | Recommended Price | Recommended Total |
 | ---: | --- | ---: | ---: | ---: |
-| $6.56 | In-house DTF ($3.00) | $9.56 | $17.00 | $170.00 |
+| $6.56 | In-house DTF ($3.00) | $9.56 | $17.50 | $175.00 |
 | $6.56 | Outsourced DTF ($5.50) | $12.06 | $20.50 | $205.00 |
 
 ## DTF Source Comparison Verification
@@ -151,12 +152,25 @@ Expected source comparison:
 | Gross profit | $51.90 | $26.90 |
 | Gross profit per shirt | $5.19 | $2.69 |
 | Gross margin | 35.19% | 18.24% |
-| Recommended price per shirt | $17.00 | $20.50 |
-| Recommended total | $170.00 | $205.00 |
+| Recommended price per shirt | $17.50 | $20.50 |
+| Recommended total | $175.00 | $205.00 |
 
 Changing the selected source must update the actual
 `pricing_safety.dtf_print_cost_cents`, not only the comparison values. A custom
 per-shirt override must take precedence over the selected source default.
+
+Growth-protection check for 50 outsourced-DTF shirts with $386.12 landed cost:
+
+- Landed cost per shirt: $7.72.
+- 40% margin price: about $12.87.
+- General minimum-profit price: about $12.72.
+- 50-99 quantity protected-floor price: about $13.22.
+- Rounded recommended price: $13.50 per shirt, or $675.00 total.
+- Gross profit: $288.88; gross margin: about 42.8%; status: Healthy.
+
+Status thresholds are Bad / Too Low below 30%, Weak from 30-34.9%, Caution /
+Tight from 35-39.9%, Healthy from 40-44.9%, Strong from 45-49.9%, and
+Excellent at 50% or above.
 
 ## API Verification Fields
 

@@ -112,8 +112,11 @@ function formatBasisPoints(basisPoints) {
 function formatMarginStatus(status) {
   const labels = {
     healthy: "Healthy",
-    tight: "Tight",
-    too_low: "Too Low",
+    strong: "Strong",
+    excellent: "Excellent",
+    tight: "Caution / Tight",
+    weak: "Weak",
+    too_low: "Bad / Too Low",
   };
 
   return labels[status] || "Not calculated";
@@ -613,7 +616,7 @@ function renderCalculation(calculation) {
     ? `
       <section class="pricing-warning" role="alert">
         <h3>Low Margin Warning</h3>
-        <p>The final customer price is below the protected recommendation.</p>
+        <p>${safety.manual_price_below_protected ? "Manual price is below protected pricing. This job may not help the business move beyond break-even." : "The customer price is below protected pricing. This job may not help the business move beyond break-even."}</p>
         ${renderQuoteTotalRow("Your Price / Shirt", formatMoney(safety.quoted_price_per_shirt_cents))}
         ${renderQuoteTotalRow("Recommended Price", formatMoney(safety.recommended_price_per_shirt_cents))}
         ${renderQuoteTotalRow("Current Margin", formatBasisPoints(safety.gross_margin_basis_points))}
@@ -637,7 +640,9 @@ function renderCalculation(calculation) {
           ${renderQuoteTotalRow("Gross Profit", formatMoney(safety.gross_profit_cents))}
           ${renderQuoteTotalRow("Gross Margin", formatBasisPoints(safety.gross_margin_basis_points))}
           ${renderQuoteTotalRow("Target Margin", formatBasisPoints(safety.target_margin_basis_points))}
+          ${safety.preferred_margin_basis_points ? renderQuoteTotalRow("Preferred Margin", formatBasisPoints(safety.preferred_margin_basis_points)) : ""}
           ${renderQuoteTotalRow("Minimum Profit / Shirt", formatMoney(safety.minimum_profit_per_shirt_cents))}
+          ${safety.preferred_profit_per_shirt_cents ? renderQuoteTotalRow("Preferred Profit / Shirt", formatMoney(safety.preferred_profit_per_shirt_cents)) : ""}
           ${renderQuoteTotalRow("Margin-Based Price", formatMoney(safety.margin_price_per_shirt_cents))}
           ${renderQuoteTotalRow("Profit-Floor Price", formatMoney(safety.profit_price_per_shirt_cents))}
           ${renderQuoteTotalRow("Calculated Blank Cost", formatMoney(totals.blank_cost_cents))}
