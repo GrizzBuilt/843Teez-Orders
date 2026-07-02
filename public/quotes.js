@@ -635,17 +635,19 @@ function renderCalculation(calculation) {
           ${renderQuoteTotalRow("Total Landed Cost", formatMoney(safety.total_landed_cost_cents))}
           ${renderQuoteTotalRow("Customer Quote", formatMoney(safety.quoted_total_cents))}
           ${renderQuoteTotalRow("Gross Profit", formatMoney(safety.gross_profit_cents))}
+          ${renderQuoteTotalRow("Gross Margin", formatBasisPoints(safety.gross_margin_basis_points))}
           ${renderQuoteTotalRow("Target Margin", formatBasisPoints(safety.target_margin_basis_points))}
           ${renderQuoteTotalRow("Minimum Profit / Shirt", formatMoney(safety.minimum_profit_per_shirt_cents))}
           ${renderQuoteTotalRow("Margin-Based Price", formatMoney(safety.margin_price_per_shirt_cents))}
           ${renderQuoteTotalRow("Profit-Floor Price", formatMoney(safety.profit_price_per_shirt_cents))}
           ${renderQuoteTotalRow("Calculated Blank Cost", formatMoney(totals.blank_cost_cents))}
-          ${item.print_type === "DTF" ? "" : renderQuoteTotalRow("Calculated Print Cost", formatMoney(totals.print_cost_cents))}
           ${renderQuoteTotalRow("Calculated Setup Fees", formatMoney(totals.setup_fee_cents))}
-          ${placementRows ? `<section class="placement-details"><h3>Placement Breakdown</h3>${placementRows}</section>` : ""}
           ${renderDtfSourceComparison(safety.dtf_source_comparison)}
           <details class="pricing-debug-details">
-            <summary>Pricing Debug</summary>
+            <summary>Rule / Pricing Debug</summary>
+            <p class="quote-muted">Reference only. Placement rule costs are not the selected DTF production cost.</p>
+            ${renderQuoteTotalRow("Placement Rule Cost Estimate", formatMoney(totals.print_cost_cents))}
+            ${placementRows ? `<section class="placement-details"><h3>Placement Rule References</h3>${placementRows}</section>` : ""}
             <pre>${escapeHtml(JSON.stringify(pricingDebug, null, 2))}</pre>
           </details>
         </div>
