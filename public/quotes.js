@@ -647,7 +647,7 @@ function renderCalculation(calculation) {
     <section class="customer-price-card">
       <div class="customer-price-heading">
         <span>Customer Price</span>
-        <strong>${calculationItems.length > 1 ? `${calculationItems.length} shirt styles` : escapeHtml(pricingLabel || formatMoney(baseDealSubtotalCents))}</strong>
+        <strong>${escapeHtml(pricingLabel || formatMoney(baseDealSubtotalCents))}</strong>
       </div>
       ${calculationItems.length > 1 ? garmentPricingSections : `
         ${renderQuoteTotalRow("Base Tier Price", formatMoney(baseDealSubtotalCents))}

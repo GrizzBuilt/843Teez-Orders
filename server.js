@@ -1455,6 +1455,7 @@ function calculateProfitProtectionMetrics({
 function calculateQuotePricingSafety({
   input,
   totalQuantity,
+  pricingQuantity = totalQuantity,
   calculatedBlankCostCents,
   calculatedPrintCostCents,
   calculatedSetupFeeCents,
@@ -1466,7 +1467,7 @@ function calculateQuotePricingSafety({
   const safetyInput = input?.pricing_safety && typeof input.pricing_safety === "object"
     ? input.pricing_safety
     : {};
-  const tier = getQuoteProfitProtectionTier(totalQuantity);
+  const tier = getQuoteProfitProtectionTier(pricingQuantity);
   const landedShirtBlankCostCents =
     normalizeOptionalMoneyCents(safetyInput.shirt_blank_cost_cents) ??
     calculatedBlankCostCents;
@@ -1527,7 +1528,7 @@ function calculateQuotePricingSafety({
       ? null
       : quotedPricePerShirtOverrideCents * totalQuantity + sizeUpchargeTotalCents);
   const quotedTotalCents = manualQuotedTotalCents ??
-    (totalQuantity <= 4 ? calculatedTotalPriceCents : null);
+    (pricingQuantity <= 4 ? calculatedTotalPriceCents : null);
   const totalLandedCostCents =
     landedShirtBlankCostCents +
     shirtShippingCents +
@@ -1669,8 +1670,9 @@ function formatCentsCompact(cents) {
   }).format(amount);
 }
 
-function buildPricingLabel(rule, totalQuantity) {
+function buildPricingLabel(rule, totalQuantity, pricingQuantity = totalQuantity) {
   const quantity = Number(totalQuantity) || 0;
+  const tierQuantity = Number(pricingQuantity) || quantity;
   const pricePerShirtCents = normalizeMoneyCents(
     rule?.print_price_per_shirt_cents
   );
@@ -1678,21 +1680,23 @@ function buildPricingLabel(rule, totalQuantity) {
   const maxQuantity =
     rule?.max_quantity == null ? null : Number(rule.max_quantity) || 0;
 
-  if (quantity === 1 && minQuantity === 1 && maxQuantity === 1) {
+  if (quantity === 1 && tierQuantity === 1 && minQuantity === 1 && maxQuantity === 1) {
     return `1 shirt: ${formatCentsCompact(pricePerShirtCents)}`;
   }
 
   if (
+    quantity === tierQuantity &&
     quantity > 1 &&
     quantity <= 4 &&
-    minQuantity === quantity &&
-    maxQuantity === quantity
+    minQuantity === tierQuantity &&
+    maxQuantity === tierQuantity
   ) {
     return `${quantity} for ${formatCentsCompact(calculateBaseTierSubtotalCents(rule, quantity))}`;
   }
 
   const shirtLabel = quantity === 1 ? "shirt" : "shirts";
-  return `${quantity} ${shirtLabel} at ${formatCentsCompact(pricePerShirtCents)} each`;
+  const tierLabel = tierQuantity !== quantity ? ` (${tierQuantity}-shirt tier)` : "";
+  return `${quantity} ${shirtLabel} at ${formatCentsCompact(pricePerShirtCents)} each${tierLabel}`;
 }
 
 function calculateBaseTierSubtotalCents(rule, totalQuantity) {
@@ -1885,6 +1889,10 @@ async function calculateQuoteItem(input) {
   const basePlacements = placements.filter((placement) => placement !== "sleeve");
   const sizes = normalizeQuoteSizes(itemInput.sizes);
   const totalQuantity = sizes.reduce((sum, size) => sum + size.quantity, 0);
+  const requestedPricingQuantity = Math.floor(Number(input?.pricing_quantity));
+  const pricingQuantity = Number.isInteger(requestedPricingQuantity) && requestedPricingQuantity > 0
+    ? requestedPricingQuantity
+    : totalQuantity;
 
   if (!shirtBlankId) {
     const error = new Error("Shirt blank is required");
@@ -2052,12 +2060,12 @@ async function calculateQuoteItem(input) {
         ORDER BY min_quantity DESC
         LIMIT 1
       `,
-      [printType, placement, totalQuantity, totalQuantity]
+      [printType, placement, pricingQuantity, pricingQuantity]
     );
 
     if (!rule) {
       const error = new Error(
-        `No print pricing rule found for ${printType} ${QUOTE_PLACEMENTS[placement]} at quantity ${totalQuantity}`
+        `No print pricing rule found for ${printType} ${QUOTE_PLACEMENTS[placement]} at quantity ${pricingQuantity}`
       );
       error.status = 400;
       throw error;
@@ -2108,12 +2116,12 @@ async function calculateQuoteItem(input) {
         ORDER BY min_quantity DESC
         LIMIT 1
       `,
-      [printType, "sleeve", totalQuantity, totalQuantity]
+      [printType, "sleeve", pricingQuantity, pricingQuantity]
     );
 
     if (!sleeveRule) {
       const error = new Error(
-        `No print pricing rule found for ${printType} ${QUOTE_PLACEMENTS.sleeve} at quantity ${totalQuantity}`
+        `No print pricing rule found for ${printType} ${QUOTE_PLACEMENTS.sleeve} at quantity ${pricingQuantity}`
       );
       error.status = 400;
       throw error;
@@ -2161,7 +2169,11 @@ async function calculateQuoteItem(input) {
     basePricePerShirtCents +
     blankUpgradePerShirtCents +
     sleeveAddOnPerShirtCents;
-  const pricingLabel = buildPricingLabel(selectedPriceRule, totalQuantity);
+  const pricingLabel = buildPricingLabel(
+    selectedPriceRule,
+    totalQuantity,
+    pricingQuantity
+  );
   const baseSubtotalCents = calculateBaseTierSubtotalCents(
     selectedPriceRule,
     totalQuantity
@@ -2175,6 +2187,7 @@ async function calculateQuoteItem(input) {
   const pricingSafety = calculateQuotePricingSafety({
     input,
     totalQuantity,
+    pricingQuantity,
     calculatedBlankCostCents: blankCostCents,
     calculatedPrintCostCents: printCostCents,
     calculatedSetupFeeCents: setupFeeCents,
@@ -2194,6 +2207,7 @@ async function calculateQuoteItem(input) {
     sleeveAddOnPerShirtCents,
     sleeveAddOnTotalCents,
     totalQuantity,
+    pricingQuantity,
     baseSubtotalCents,
     pricePerShirtCents,
     calculatedTotalPriceCents,
@@ -2202,6 +2216,7 @@ async function calculateQuoteItem(input) {
   });
   const pricingDebug = {
     totalQuantity,
+    pricingQuantity,
     basePricePerShirtCents,
     baseTierPricePerShirtCents: basePricePerShirtCents,
     basePricingBlankBrand: BASE_PRICING_BLANK_BRAND,
@@ -2301,6 +2316,15 @@ async function calculateQuote(input) {
   const itemInputs = requestedItems.length
     ? requestedItems
     : [getQuoteItemInput(input)];
+  const combinedPricingQuantity = itemInputs.reduce(
+    (sum, item) =>
+      sum +
+      normalizeQuoteSizes(item.sizes).reduce(
+        (itemSum, size) => itemSum + size.quantity,
+        0
+      ),
+    0
+  );
 
   if (itemInputs.length > 12) {
     const error = new Error("A quote can include up to 12 shirt styles");
@@ -2360,6 +2384,7 @@ async function calculateQuote(input) {
       await calculateQuoteItem({
         ...input,
         item,
+        pricing_quantity: combinedPricingQuantity,
         pricing_safety: itemSafety,
       })
     );
@@ -2477,8 +2502,17 @@ async function calculateQuote(input) {
     low_margin_warning: totalPriceCents < recommendedTotalCents,
     dtf_source_comparison: [],
   };
+  const combinedBasePricePerShirtCents = Math.max(
+    ...calculations.map(
+      (calculation) =>
+        normalizeMoneyCents(
+          calculation.totals.pricing_debug.basePricePerShirtCents
+        )
+    )
+  );
   const totals = {
     total_quantity: totalQuantity,
+    pricing_quantity: combinedPricingQuantity,
     blank_cost_cents: sumQuoteValues(
       calculations,
       (calculation) => calculation.totals.blank_cost_cents
@@ -2494,7 +2528,7 @@ async function calculateQuote(input) {
     total_price_cents: totalPriceCents,
     price_per_shirt_cents: Math.round(totalPriceCents / totalQuantity),
     profit_cents: grossProfitCents,
-    pricing_label: `${items.length} shirt styles priced separately`,
+    pricing_label: `${totalQuantity} shirts at ${formatCentsCompact(combinedBasePricePerShirtCents)} each`,
     base_deal_subtotal_cents: sumQuoteValues(
       calculations,
       (calculation) => calculation.totals.base_deal_subtotal_cents
@@ -2518,6 +2552,7 @@ async function calculateQuote(input) {
     pricing_safety: pricingSafety,
     pricing_debug: {
       itemCount: items.length,
+      pricingQuantity: combinedPricingQuantity,
       itemCalculations: calculations.map((calculation) =>
         calculation.totals.pricing_debug
       ),
