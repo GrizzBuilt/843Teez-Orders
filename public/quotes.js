@@ -166,8 +166,8 @@ function renderDtfSourceComparison(comparison) {
                 ${renderQuoteTotalRow("Gross Profit", formatMoney(source.gross_profit_cents))}
                 ${renderQuoteTotalRow("Profit / Shirt", formatMoney(source.gross_profit_per_shirt_cents))}
                 ${renderQuoteTotalRow("Gross Margin", formatBasisPoints(source.gross_margin_basis_points))}
-                ${renderQuoteTotalRow("Recommended Price / Shirt", formatMoney(source.recommended_price_per_shirt_cents))}
-                ${renderQuoteTotalRow("Recommended Total", formatMoney(source.recommended_total_cents))}
+                ${renderQuoteTotalRow("Protected Selling Price / Shirt", formatMoney(source.recommended_price_per_shirt_cents))}
+                ${renderQuoteTotalRow("Protected Total", formatMoney(source.recommended_total_cents))}
               </article>
             `
           )
@@ -540,6 +540,7 @@ function renderCalculation(calculation) {
     Number(totals.customer_blank_upgrade_total_cents) ||
     Number(pricingDebug.customerBlankUpgradeTotalCents) ||
     blankUpgradeTotalCents;
+  const finalAveragePerShirtCents = getFinalAveragePerShirtCents(totals);
   const safety = totals.pricing_safety || item.pricing_safety || {};
   const sizeUpgradeRows = (item.sizes || [])
     .filter((size) => Number(size.customer_blank_upgrade_total_cents) > 0)
@@ -562,6 +563,10 @@ function renderCalculation(calculation) {
       const garmentUpgradeTotal =
         Number(garment.customer_blank_upgrade_total_cents) || 0;
       const garmentSleeveTotal = Number(garment.sleeve_add_on_total_cents) || 0;
+      const garmentBaseUpgradeSubtotalCents =
+        (Number(garment.base_deal_subtotal_cents) || 0) +
+        garmentUpgradeTotal +
+        garmentSleeveTotal;
 
       return `
         <article class="calculated-garment">
@@ -576,18 +581,18 @@ function renderCalculation(calculation) {
           ${renderQuoteTotalRow("Base Tier Price", formatMoney(garment.base_deal_subtotal_cents))}
           ${garmentUpgradeTotal > 0 ? renderQuoteTotalRow("Size / Blank Upgrades", `+${formatMoney(garmentUpgradeTotal)}`) : ""}
           ${garmentSleeveTotal > 0 ? renderQuoteTotalRow("Sleeve Add-On", `+${formatMoney(garmentSleeveTotal)}`) : ""}
-          ${renderQuoteTotalRow("Style Subtotal", formatMoney(garment.total_price_cents), "quote-grand-total")}
+          ${renderQuoteTotalRow("Style Base / Upgrade Subtotal", formatMoney(garmentBaseUpgradeSubtotalCents))}
           ${garment.style_notes ? `<p class="calculated-garment-notes">${escapeHtml(garment.style_notes)}</p>` : ""}
-          <span class="calculated-garment-deal">${escapeHtml(garment.pricing_label || garmentDebug.pricingLabel || "")}</span>
+          <span class="calculated-garment-deal">Internal tier: ${escapeHtml(garment.pricing_label || garmentDebug.pricingLabel || "Not set")}</span>
         </article>
       `;
     })
     .join("");
   const dealRows = [
     pricingLabel
-      ? renderQuoteTotalRow("Pricing Deal", pricingLabel)
+      ? renderQuoteTotalRow("Internal Pricing Tier", pricingLabel)
       : "",
-    renderQuoteTotalRow("Base Deal Subtotal", formatMoney(baseDealSubtotalCents)),
+    renderQuoteTotalRow("Internal Base Tier Subtotal", formatMoney(baseDealSubtotalCents)),
     sleeveAddOnTotalCents > 0
       ? renderQuoteTotalRow(
           "Sleeve Add-On",
@@ -618,9 +623,9 @@ function renderCalculation(calculation) {
         <h3>Low Margin Warning</h3>
         <p>${safety.manual_price_below_protected ? "Manual price is below protected pricing. This job may not help the business move beyond break-even." : "The customer price is below protected pricing. This job may not help the business move beyond break-even."}</p>
         ${renderQuoteTotalRow("Your Price / Shirt", formatMoney(safety.quoted_price_per_shirt_cents))}
-        ${renderQuoteTotalRow("Recommended Price", formatMoney(safety.recommended_price_per_shirt_cents))}
+        ${renderQuoteTotalRow("Protected Selling Price", formatMoney(safety.recommended_price_per_shirt_cents))}
         ${renderQuoteTotalRow("Current Margin", formatBasisPoints(safety.gross_margin_basis_points))}
-        ${renderQuoteTotalRow("Recommended Total", formatMoney(safety.recommended_total_cents))}
+        ${renderQuoteTotalRow("Protected Total", formatMoney(safety.recommended_total_cents))}
       </section>
     `
     : "";
@@ -663,23 +668,33 @@ function renderCalculation(calculation) {
   quoteSummaryContent.innerHTML = `
     <section class="customer-price-card">
       <div class="customer-price-heading">
-        <span>Customer Price</span>
-        <strong>${escapeHtml(pricingLabel || formatMoney(baseDealSubtotalCents))}</strong>
+        <span>Base Tier / Starting Point</span>
+        <strong>${formatMoney(baseDealSubtotalCents)}</strong>
       </div>
       ${calculationItems.length > 1 ? garmentPricingSections : `
         ${renderQuoteTotalRow("Base Tier Price", formatMoney(baseDealSubtotalCents))}
         ${customerBlankUpgradeTotalCents > 0 ? `<div class="customer-upgrade-breakdown"><h3>Size / Blank Upgrades</h3>${sizeUpgradeRows || renderQuoteTotalRow("Blank Upgrade", `+${formatMoney(customerBlankUpgradeTotalCents)}`)}</div>` : ""}
         ${sleeveAddOnTotalCents > 0 ? renderQuoteTotalRow("Sleeve Add-On", `+${formatMoney(sleeveAddOnTotalCents)}`) : ""}
       `}
-      ${renderQuoteTotalRow("Final Quote", formatMoney(totals.total_price_cents), "quote-grand-total")}
+      ${calculationItems.length > 1 ? '<p class="style-pricing-note">Style amounts are internal starting points. The protected selling price is calculated across the combined quote.</p>' : ""}
+      <div class="final-quote-display">
+        <div>
+          <span>Final Quote</span>
+          <small>Protected customer total</small>
+        </div>
+        <div class="final-quote-amount">
+          <strong>${formatMoney(totals.total_price_cents)}</strong>
+          <small>${formatMoney(finalAveragePerShirtCents)} per shirt</small>
+        </div>
+      </div>
     </section>
     <section class="recommended-price-card margin-${escapeHtml(marginStatus)}">
       <div class="recommended-price-heading">
-        <span>Recommended Price</span>
+        <span>Protected Selling Price</span>
         <strong>${formatMoney(safety.recommended_price_per_shirt_cents)} <small>per shirt</small></strong>
       </div>
       <div class="recommended-result-grid">
-        <div><span>Recommended Total</span><strong>${formatMoney(safety.recommended_total_cents)}</strong></div>
+        <div><span>Protected Total</span><strong>${formatMoney(safety.recommended_total_cents)}</strong></div>
         <div><span>Your Cost</span><strong>${formatMoney(safety.landed_cost_per_shirt_cents)}</strong></div>
         <div><span>Profit Per Shirt</span><strong>${formatMoney(safety.gross_profit_per_shirt_cents)}</strong></div>
         <div><span>Margin</span><strong>${formatBasisPoints(safety.gross_margin_basis_points)}</strong></div>
@@ -1058,12 +1073,12 @@ function renderSavedPricingSafety(quote) {
           <section class="pricing-warning" role="alert">
             <h3>Low Margin Warning</h3>
             ${renderQuoteTotalRow("Current Price / Shirt", formatMoney(currentPricePerShirtCents))}
-            ${renderQuoteTotalRow("Recommended Price / Shirt", formatMoney(quote.recommended_price_per_shirt_cents))}
+            ${renderQuoteTotalRow("Protected Selling Price / Shirt", formatMoney(quote.recommended_price_per_shirt_cents))}
             ${renderQuoteTotalRow("Current Gross Margin", formatBasisPoints(quote.gross_margin_basis_points))}
             ${renderQuoteTotalRow("Required Gross Margin", formatBasisPoints(quote.target_margin_basis_points))}
             ${renderQuoteTotalRow("Current Gross Profit", formatMoney(quote.profit_cents))}
             ${renderQuoteTotalRow("Recommended Gross Profit", formatMoney(quote.recommended_profit_cents))}
-            ${renderQuoteTotalRow("Recommended Total Quote", formatMoney(quote.recommended_total_cents))}
+            ${renderQuoteTotalRow("Protected Total Quote", formatMoney(quote.recommended_total_cents))}
           </section>
         `
         : ""
@@ -1080,8 +1095,8 @@ function renderSavedPricingSafety(quote) {
       ${renderQuoteTotalRow("Cost / Shirt", formatMoney(quote.landed_cost_per_shirt_cents))}
       ${renderQuoteTotalRow("Profit / Shirt", formatMoney(quote.gross_profit_per_shirt_cents))}
       ${renderQuoteTotalRow("Gross Margin", formatBasisPoints(quote.gross_margin_basis_points))}
-      ${renderQuoteTotalRow("Recommended Price", formatMoney(quote.recommended_price_per_shirt_cents))}
-      ${renderQuoteTotalRow("Recommended Total", formatMoney(quote.recommended_total_cents))}
+      ${renderQuoteTotalRow("Protected Selling Price", formatMoney(quote.recommended_price_per_shirt_cents))}
+      ${renderQuoteTotalRow("Protected Total", formatMoney(quote.recommended_total_cents))}
       ${renderQuoteTotalRow("Recommended Profit", formatMoney(quote.recommended_profit_cents))}
       ${renderQuoteTotalRow("Recommended Margin", formatBasisPoints(quote.recommended_margin_basis_points))}
     </section>
@@ -1116,7 +1131,6 @@ function renderQuoteDetail(quote) {
         ${renderQuoteTotalRow("Color(s)", item.color || "Not set")}
         ${renderQuoteTotalRow("Sizes", sizes || "Not set")}
         ${renderQuoteTotalRow("Print", [item.print_type, placements].filter(Boolean).join(" - ") || "Not set")}
-        ${renderQuoteTotalRow("Style Subtotal", formatMoney(item.total_price_cents))}
         ${item.style_notes ? `<div class="quote-detail-notes">${escapeHtml(item.style_notes)}</div>` : ""}
       </article>
     `;

@@ -490,6 +490,47 @@
   font-size: 1.5rem;
 }
 
+.style-pricing-note {
+  margin: 0.75rem 0 0;
+  color: var(--text-soft);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.final-quote-display {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 2px solid var(--text);
+}
+
+.final-quote-display > div:first-child,
+.final-quote-amount {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.final-quote-display span {
+  font-size: 1.1rem;
+  font-weight: 850;
+}
+
+.final-quote-display small {
+  color: var(--text-soft);
+}
+
+.final-quote-amount {
+  text-align: right;
+}
+
+.final-quote-amount strong {
+  font-size: 2.4rem;
+  line-height: 1;
+}
+
 .customer-upgrade-breakdown {
   margin-top: 0.65rem;
   padding-top: 0.65rem;
