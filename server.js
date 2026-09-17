@@ -1324,12 +1324,48 @@ const MINIMUM_PROFIT_PER_SHIRT_CENTS = 500;
 const OUTSOURCED_DTF_PREFERRED_PROFIT_CENTS = 600;
 
 const QUOTE_PROFIT_PROTECTION_TIERS = [
-  { min: 1, max: 4, protected_profit_floor_cents: 1200 },
-  { min: 5, max: 9, protected_profit_floor_cents: 900 },
-  { min: 10, max: 24, protected_profit_floor_cents: 700 },
-  { min: 25, max: 49, protected_profit_floor_cents: 600 },
-  { min: 50, max: 99, protected_profit_floor_cents: 550 },
-  { min: 100, max: null, protected_profit_floor_cents: 500 },
+  {
+    min: 1,
+    max: 4,
+    protected_profit_floor_cents: 1200,
+    minimum_profit_cents: 500,
+    in_house_dtf_target_margin_basis_points: 4500,
+  },
+  {
+    min: 5,
+    max: 9,
+    protected_profit_floor_cents: 900,
+    minimum_profit_cents: 500,
+    in_house_dtf_target_margin_basis_points: 4500,
+  },
+  {
+    min: 10,
+    max: 24,
+    protected_profit_floor_cents: 700,
+    minimum_profit_cents: 500,
+    in_house_dtf_target_margin_basis_points: 4500,
+  },
+  {
+    min: 25,
+    max: 49,
+    protected_profit_floor_cents: 600,
+    minimum_profit_cents: 600,
+    in_house_dtf_target_margin_basis_points: 4500,
+  },
+  {
+    min: 50,
+    max: 99,
+    protected_profit_floor_cents: 550,
+    minimum_profit_cents: 550,
+    in_house_dtf_target_margin_basis_points: 4200,
+  },
+  {
+    min: 100,
+    max: null,
+    protected_profit_floor_cents: 500,
+    minimum_profit_cents: 500,
+    in_house_dtf_target_margin_basis_points: 4000,
+  },
 ];
 
 const DTF_PRINT_SOURCES = {
@@ -1397,9 +1433,11 @@ function getProfitProtectionSettings(tier, printType, dtfSource) {
   return {
     ...tier,
     target_margin_basis_points: isInHouseDtf
-      ? IN_HOUSE_DTF_TARGET_MARGIN_BASIS_POINTS
+      ? tier.in_house_dtf_target_margin_basis_points ??
+        IN_HOUSE_DTF_TARGET_MARGIN_BASIS_POINTS
       : GENERAL_TARGET_MARGIN_BASIS_POINTS,
-    minimum_profit_cents: MINIMUM_PROFIT_PER_SHIRT_CENTS,
+    minimum_profit_cents:
+      tier.minimum_profit_cents ?? MINIMUM_PROFIT_PER_SHIRT_CENTS,
     preferred_margin_basis_points:
       printType === "DTF" && dtfSource === "outsourced_dtf"
         ? OUTSOURCED_DTF_PREFERRED_MARGIN_BASIS_POINTS
