@@ -168,6 +168,21 @@ Growth-protection check for 50 outsourced-DTF shirts with $386.12 landed cost:
 - Rounded recommended price: $13.50 per shirt, or $675.00 total.
 - Gross profit: $288.88; gross margin: about 42.8%; status: Healthy.
 
+In-house DTF protection becomes quantity-sensitive so the volume tiers produce
+a meaningful customer discount without removing the per-shirt profit floor:
+
+| Quantity | Target margin | Minimum profit / shirt |
+| ---: | ---: | ---: |
+| 1-24 | 45% | $5.00 |
+| 25-49 | 45% | $6.00 |
+| 50-99 | 42% | $5.50 |
+| 100+ | 40% | $5.00 |
+
+For a Gildan 64000 Softstyle with a $4.25 blank cost and $3.00 in-house DTF
+cost, verify the protected recommendation is $13.50 each at 25 shirts, $13.00
+each at 50 shirts, and $12.50 each at 100 shirts. These recommendations leave
+at least $5.00 per shirt above the tracked blank and DTF costs.
+
 Status thresholds are Bad / Too Low below 30%, Weak from 30-34.9%, Caution /
 Tight from 35-39.9%, Healthy from 40-44.9%, Strong from 45-49.9%, and
 Excellent at 50% or above.
