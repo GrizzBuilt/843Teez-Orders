@@ -57,18 +57,19 @@ test("rush work stays in house even at higher quantities", () => {
   );
 });
 
-test("charges the standard DTF allowance for every base print location", () => {
+test("uses one outsourced allowance plus incremental multi-location cost", () => {
   assert.deepEqual(
     calculateDtfLocationCost({
       quantity: 40,
-      locationCount: 2,
-      costPerLocationCents: 550,
+      baseAllowancePerShirtCents: 550,
+      placementCostsPerShirtCents: [150, 350],
     }),
     {
       location_count: 2,
-      cost_per_location_cents: 550,
-      cost_per_shirt_cents: 1100,
-      total_cost_cents: 44000,
+      base_allowance_per_shirt_cents: 550,
+      additional_location_cost_per_shirt_cents: 150,
+      cost_per_shirt_cents: 700,
+      total_cost_cents: 28000,
     }
   );
 });
@@ -77,9 +78,21 @@ test("keeps a single-location in-house allowance at three dollars per shirt", ()
   assert.equal(
     calculateDtfLocationCost({
       quantity: 8,
-      locationCount: 1,
-      costPerLocationCents: 300,
+      baseAllowancePerShirtCents: 300,
+      placementCostsPerShirtCents: [350],
     }).total_cost_cents,
     2400
   );
+});
+
+test("adds the smaller incremental cost for full-front and full-back printing", () => {
+  const cost = calculateDtfLocationCost({
+    quantity: 30,
+    baseAllowancePerShirtCents: 550,
+    placementCostsPerShirtCents: [250, 350],
+  });
+
+  assert.equal(cost.additional_location_cost_per_shirt_cents, 250);
+  assert.equal(cost.cost_per_shirt_cents, 800);
+  assert.equal(cost.total_cost_cents, 24000);
 });

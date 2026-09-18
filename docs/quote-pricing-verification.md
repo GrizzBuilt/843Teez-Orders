@@ -54,10 +54,10 @@ Sell-price behavior:
   the difference is added per shirt as `blankUpgradePerShirtCents`. If it costs
   less than PC43, the price is not reduced unless
   `ALLOW_BLANK_PRICE_REDUCTION=1` is configured.
-- Each non-sleeve base placement receives its own DTF cost allowance. A
-  full-front plus full-back shirt therefore carries two $3.00 in-house
-  allowances or two $5.50 outsourced allowances. This combined print cost is
-  included in landed-cost protection and the recommended selling price.
+- The $3.00 in-house or $5.50 outsourced DTF allowance is applied once per
+  shirt. For multi-location work, the largest placement is covered by that
+  allowance and the smaller placement costs are added incrementally. This
+  avoids a price spike when a volume order switches to outsourced production.
 - Multiple base placements do not blindly multiply the customer sell-price
   tier. If selected placements have different base sell prices, the highest
   matching price is used once and profit protection accounts for the combined
