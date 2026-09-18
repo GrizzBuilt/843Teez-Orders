@@ -1561,7 +1561,7 @@ function calculateQuotePricingSafety({
   calculatedPrintCostCents,
   calculatedSetupFeeCents,
   printType,
-  dtfBaseLocationCount,
+  dtfBasePlacementCostsPerShirtCents,
   sizeUpchargeTotalCents,
   internalAddOnCostCents,
   calculatedTotalPriceCents,
@@ -1578,8 +1578,12 @@ function calculateQuotePricingSafety({
     safetyInput.dtf_print_cost_cents
   );
   const isDtf = printType === "DTF";
+  const normalizedDtfBasePlacementCosts = isDtf &&
+    Array.isArray(dtfBasePlacementCostsPerShirtCents)
+    ? dtfBasePlacementCostsPerShirtCents.map(normalizeMoneyCents)
+    : [];
   const normalizedDtfBaseLocationCount = isDtf
-    ? Math.max(1, Math.floor(Number(dtfBaseLocationCount) || 0))
+    ? Math.max(1, normalizedDtfBasePlacementCosts.length)
     : 0;
   const requestedDtfSource = normalizeDtfPrintSource(safetyInput.dtf_source);
   const dtfSource = isDtf
@@ -1602,14 +1606,14 @@ function calculateQuotePricingSafety({
     throw error;
   }
 
-  const defaultDtfCostPerLocationCents = isDtf
+  const defaultDtfBaseAllowancePerShirtCents = isDtf
     ? DTF_PRINT_SOURCES[dtfSource].default_cost_per_shirt_cents
     : null;
-  const defaultDtfCost = isDtf && defaultDtfCostPerLocationCents != null
+  const defaultDtfCost = isDtf && defaultDtfBaseAllowancePerShirtCents != null
     ? calculateDtfLocationCost({
       quantity: totalQuantity,
-      locationCount: normalizedDtfBaseLocationCount,
-      costPerLocationCents: defaultDtfCostPerLocationCents,
+      baseAllowancePerShirtCents: defaultDtfBaseAllowancePerShirtCents,
+      placementCostsPerShirtCents: normalizedDtfBasePlacementCosts,
     })
     : null;
   const dtfCostPerShirtCents = isDtf
@@ -1667,11 +1671,13 @@ function calculateQuotePricingSafety({
   const dtf_source_comparison = isDtf
     ? ["in_house_dtf", "outsourced_dtf"].map(
     (source) => {
-      const sourceCostPerShirtCents =
-        DTF_PRINT_SOURCES[source].default_cost_per_shirt_cents *
-        normalizedDtfBaseLocationCount;
-      const sourceCostPerLocationCents =
-        DTF_PRINT_SOURCES[source].default_cost_per_shirt_cents;
+      const sourceCost = calculateDtfLocationCost({
+        quantity: totalQuantity,
+        baseAllowancePerShirtCents:
+          DTF_PRINT_SOURCES[source].default_cost_per_shirt_cents,
+        placementCostsPerShirtCents: normalizedDtfBasePlacementCosts,
+      });
+      const sourceCostPerShirtCents = sourceCost.cost_per_shirt_cents;
       const sourceDtfCostTotalCents = sourceCostPerShirtCents * totalQuantity;
       const sourceTier = getProfitProtectionSettings(
         quantityTier,
@@ -1690,7 +1696,10 @@ function calculateQuotePricingSafety({
         source,
         label: DTF_PRINT_SOURCES[source].label,
         dtf_location_count: normalizedDtfBaseLocationCount,
-        dtf_cost_per_location_cents: sourceCostPerLocationCents,
+        dtf_base_allowance_per_shirt_cents:
+          sourceCost.base_allowance_per_shirt_cents,
+        dtf_additional_location_cost_per_shirt_cents:
+          sourceCost.additional_location_cost_per_shirt_cents,
         dtf_cost_per_shirt_cents: sourceCostPerShirtCents,
         dtf_cost_total_cents: sourceDtfCostTotalCents,
         ...sourceMetrics,
@@ -1706,9 +1715,10 @@ function calculateQuotePricingSafety({
     dtf_source_label: isDtf ? DTF_PRINT_SOURCES[dtfSource].label : "Not applicable",
     dtf_source_mode: String(safetyInput.dtf_source_mode || dtfSource),
     dtf_location_count: normalizedDtfBaseLocationCount,
-    dtf_cost_per_location_cents:
-      defaultDtfCostPerLocationCents ??
-      Math.round(dtfCostPerShirtCents / Math.max(1, normalizedDtfBaseLocationCount)),
+    dtf_base_allowance_per_shirt_cents:
+      defaultDtfCost?.base_allowance_per_shirt_cents ?? dtfCostPerShirtCents,
+    dtf_additional_location_cost_per_shirt_cents:
+      defaultDtfCost?.additional_location_cost_per_shirt_cents ?? 0,
     dtf_recommended_source: String(
       safetyInput.dtf_recommended_source || dtfSource
     ),
@@ -2332,7 +2342,9 @@ async function calculateQuoteItem(input) {
     calculatedPrintCostCents: printCostCents,
     calculatedSetupFeeCents: setupFeeCents,
     printType,
-    dtfBaseLocationCount: basePlacements.length,
+    dtfBasePlacementCostsPerShirtCents: calculatedPlacements
+      .filter((placement) => !placement.is_add_on)
+      .map((placement) => placement.print_cost_per_shirt_cents),
     sizeUpchargeTotalCents: customerBlankUpgradeTotalCents,
     internalAddOnCostCents,
     calculatedTotalPriceCents,

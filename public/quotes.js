@@ -650,7 +650,8 @@ function renderCalculation(calculation) {
           ${dealRows}
           ${renderQuoteTotalRow("Print Source", safety.dtf_source_label || "Not set")}
           ${renderQuoteTotalRow("DTF Base Locations", safety.dtf_location_count || 1)}
-          ${renderQuoteTotalRow("DTF Cost / Location", formatMoney(safety.dtf_cost_per_location_cents))}
+          ${renderQuoteTotalRow("Base DTF Allowance / Shirt", formatMoney(safety.dtf_base_allowance_per_shirt_cents))}
+          ${renderQuoteTotalRow("Additional Location Cost / Shirt", formatMoney(safety.dtf_additional_location_cost_per_shirt_cents))}
           ${renderQuoteTotalRow("DTF Cost / Shirt", formatMoney(safety.dtf_cost_per_shirt_cents))}
           ${renderQuoteTotalRow("Total DTF Cost", formatMoney(safety.dtf_print_cost_cents))}
           ${renderQuoteTotalRow("Total Landed Cost", formatMoney(safety.total_landed_cost_cents))}
