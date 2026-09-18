@@ -57,19 +57,19 @@ test("rush work stays in house even at higher quantities", () => {
   );
 });
 
-test("uses one outsourced allowance plus incremental multi-location cost", () => {
+test("uses one outsourced allowance plus a small left-chest increment", () => {
   assert.deepEqual(
     calculateDtfLocationCost({
       quantity: 40,
       baseAllowancePerShirtCents: 550,
-      placementCostsPerShirtCents: [150, 350],
+      placementCostsPerShirtCents: [50, 350],
     }),
     {
       location_count: 2,
       base_allowance_per_shirt_cents: 550,
-      additional_location_cost_per_shirt_cents: 150,
-      cost_per_shirt_cents: 700,
-      total_cost_cents: 28000,
+      additional_location_cost_per_shirt_cents: 50,
+      cost_per_shirt_cents: 600,
+      total_cost_cents: 24000,
     }
   );
 });

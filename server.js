@@ -1321,6 +1321,11 @@ const QUOTE_PLACEMENTS = {
 };
 
 const SLEEVE_ADD_ON_PRICE_CENTS = 300;
+const DTF_ADDITIONAL_LOCATION_COSTS_CENTS = {
+  left_chest: 50,
+  full_front: 250,
+  full_back: 350,
+};
 const GENERAL_TARGET_MARGIN_BASIS_POINTS = 4000;
 const IN_HOUSE_DTF_TARGET_MARGIN_BASIS_POINTS = 4500;
 const OUTSOURCED_DTF_PREFERRED_MARGIN_BASIS_POINTS = 4500;
@@ -2344,7 +2349,11 @@ async function calculateQuoteItem(input) {
     printType,
     dtfBasePlacementCostsPerShirtCents: calculatedPlacements
       .filter((placement) => !placement.is_add_on)
-      .map((placement) => placement.print_cost_per_shirt_cents),
+      .map(
+        (placement) =>
+          DTF_ADDITIONAL_LOCATION_COSTS_CENTS[placement.placement] ??
+          placement.print_cost_per_shirt_cents
+      ),
     sizeUpchargeTotalCents: customerBlankUpgradeTotalCents,
     internalAddOnCostCents,
     calculatedTotalPriceCents,
