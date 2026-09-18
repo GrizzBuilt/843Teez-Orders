@@ -54,9 +54,14 @@ Sell-price behavior:
   the difference is added per shirt as `blankUpgradePerShirtCents`. If it costs
   less than PC43, the price is not reduced unless
   `ALLOW_BLANK_PRICE_REDUCTION=1` is configured.
-- Multiple base placements add internal print/setup cost, but do not multiply
-  the customer sell price. If selected base placements have different sell
-  prices, the highest matching per-shirt sell price is used once for the order.
+- Each non-sleeve base placement receives its own DTF cost allowance. A
+  full-front plus full-back shirt therefore carries two $3.00 in-house
+  allowances or two $5.50 outsourced allowances. This combined print cost is
+  included in landed-cost protection and the recommended selling price.
+- Multiple base placements do not blindly multiply the customer sell-price
+  tier. If selected placements have different base sell prices, the highest
+  matching price is used once and profit protection accounts for the combined
+  DTF cost.
 - A quote with a $12.00 base tier, PC43 at $2.04, and selected blank at $4.25
   should return `blankUpgradePerShirtCents = 221` and
   `price_per_shirt_cents = 1421` before sleeve.
