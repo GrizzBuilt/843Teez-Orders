@@ -11,7 +11,8 @@
 ## Quote Workflow
 
 1. Manage blank and print pricing at `/pricing.html`.
-2. Build and save draft quotes at `/quotes.html`.
+2. Build and save draft quotes at `/quotes.html`. Enter sizes and print
+   locations; the app recommends in-house or outsourced DTF automatically.
 3. Open the customer view from a saved quote to print or share the quote.
 4. Convert an approved quote to an order from `/quotes.html`.
 

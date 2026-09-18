@@ -286,6 +286,46 @@
   gap: 0.75rem;
 }
 
+.print-placement-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.print-placement-card {
+  position: relative;
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-muted);
+  color: var(--text);
+  padding: 0.75rem;
+  text-align: center;
+  font-weight: 850;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.print-placement-card input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.print-placement-card:has(input:focus-visible) {
+  border-color: var(--brand-blue);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.print-placement-card:has(input:checked) {
+  border-color: #22c55e;
+  background: #f0fdf4;
+  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.35);
+}
+
 .print-preset-card {
   min-height: 64px;
   border: 1px solid var(--border);
@@ -329,6 +369,22 @@
 
 .sleeve-toggle-card strong {
   font-size: 0.84rem;
+}
+
+.rush-production-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 0.75rem;
+  color: var(--text);
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.rush-production-toggle input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--brand-blue);
 }
 
 .custom-placement-options {
@@ -470,6 +526,44 @@
   border-top: 5px solid var(--brand-blue);
   background: var(--surface-muted);
   padding: 1rem;
+}
+
+.production-recommendation-card {
+  border: 1px solid #bae6fd;
+  border-left: 5px solid var(--brand-blue);
+  background: #f0f9ff;
+  padding: 1rem;
+}
+
+.production-recommendation-card.is-overridden {
+  border-color: #fed7aa;
+  border-left-color: #f97316;
+  background: #fff7ed;
+}
+
+.production-recommendation-card span,
+.production-recommendation-card strong {
+  display: block;
+}
+
+.production-recommendation-card span {
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.production-recommendation-card strong {
+  margin-top: 0.2rem;
+  color: var(--text);
+  font-size: 1.35rem;
+}
+
+.production-recommendation-card p {
+  margin: 0.35rem 0 0;
+  color: var(--text-soft);
+  font-size: 0.86rem;
+  line-height: 1.45;
 }
 
 .customer-price-heading span,
@@ -1029,6 +1123,24 @@ body.dark-mode .print-preset-card.is-selected {
   box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.35);
 }
 
+body.dark-mode .print-placement-card:has(input:checked) {
+  border-color: #22c55e;
+  background: #12311f;
+  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.35);
+}
+
+body.dark-mode .production-recommendation-card {
+  border-color: #1d4f69;
+  border-left-color: #38bdf8;
+  background: #0d2432;
+}
+
+body.dark-mode .production-recommendation-card.is-overridden {
+  border-color: #7c3c13;
+  border-left-color: #fb923c;
+  background: #351b0d;
+}
+
 body.dark-mode .quote-count-pill,
 body.dark-mode .quote-status-pill {
   background: #182638;
@@ -1157,6 +1269,16 @@ body.dark-mode .margin-too_low .margin-status {
   .print-preset-card {
     min-height: 58px;
     padding: 0.9rem;
+  }
+
+  .print-placement-grid {
+    gap: 0.45rem;
+  }
+
+  .print-placement-card {
+    min-height: 56px;
+    padding: 0.55rem 0.35rem;
+    font-size: 0.8rem;
   }
 
   .sleeve-toggle-card {
