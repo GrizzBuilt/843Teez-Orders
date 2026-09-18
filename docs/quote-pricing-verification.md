@@ -58,6 +58,9 @@ Sell-price behavior:
   shirt. For multi-location work, the largest placement is covered by that
   allowance and the smaller placement costs are added incrementally. This
   avoids a price spike when a volume order switches to outsourced production.
+- A left-chest print paired with a larger front or back print adds only $0.50
+  per shirt to internal DTF cost. Its normal standalone placement cost is not
+  stacked on top of the source allowance.
 - Multiple base placements do not blindly multiply the customer sell-price
   tier. If selected placements have different base sell prices, the highest
   matching price is used once and profit protection accounts for the combined
