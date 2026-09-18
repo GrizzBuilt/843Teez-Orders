@@ -42,20 +42,14 @@ const mobileQuoteEach = document.getElementById("mobile-quote-each");
 const mobileCalculateQuoteBtn = document.getElementById("mobile-calculate-quote-btn");
 const mobileSaveQuoteBtn = document.getElementById("mobile-save-quote-btn");
 const sleeveToggleCard = document.getElementById("sleeve-toggle-card");
-const printTypeSelect = document.getElementById("print_type");
-const basePlacementSelect = document.getElementById("base_placement");
+const basePlacementInputs = [
+  ...document.querySelectorAll('input[name="base_placements"]'),
+];
 const dtfSourceSelect = document.getElementById("dtf_source");
 const dtfCostPerShirtInput = document.getElementById("dtf_cost_per_shirt");
-const dtfSourceField = document.getElementById("dtf-source-field");
-const dtfCostField = document.getElementById("dtf-cost-field");
-
-const DTF_SOURCE_DEFAULT_COSTS = {
-  in_house_dtf: 3,
-  outsourced_dtf: 5.5,
-  customer_supplied: 0,
-};
 
 const DTF_SOURCE_LABELS = {
+  auto_dtf: "Auto — use recommendation",
   in_house_dtf: "In-house DTF",
   outsourced_dtf: "Outsourced DTF",
   customer_supplied: "Customer-supplied transfers",
@@ -374,7 +368,7 @@ function getGarmentItems() {
       ),
       color: String(block.querySelector(".garment-color-input")?.value || "").trim(),
       style_notes: String(block.querySelector(".garment-notes-input")?.value || "").trim(),
-      print_type: printTypeSelect?.value || "DTF",
+      print_type: "DTF",
       placements: getSelectedPlacements(),
       sizes: getBlockSizeQuantities(block),
     })
@@ -415,16 +409,23 @@ function syncSleeveToggleUi() {
   }
 }
 
-function syncPrintTypeUi() {
-  const isDtf = (printTypeSelect?.value || "DTF") === "DTF";
-
-  if (dtfSourceField) dtfSourceField.hidden = !isDtf;
-  if (dtfCostField) dtfCostField.hidden = !isDtf;
+function getSelectedPlacements() {
+  const placements = basePlacementInputs
+    .filter((input) => input.checked)
+    .map((input) => input.value);
+  return isSleeveSelected ? [...placements, "sleeve"] : placements;
 }
 
-function getSelectedPlacements() {
-  const basePlacement = basePlacementSelect?.value || "full_front";
-  return isSleeveSelected ? [basePlacement, "sleeve"] : [basePlacement];
+function setSelectedBasePlacements(placements = ["full_front"]) {
+  const selected = new Set(
+    (Array.isArray(placements) ? placements : []).filter(
+      (placement) => placement !== "sleeve"
+    )
+  );
+
+  basePlacementInputs.forEach((input) => {
+    input.checked = selected.has(input.value);
+  });
 }
 
 function getQuotePayload() {
@@ -452,7 +453,8 @@ function getQuotePayload() {
     pricing_safety: {
       shirt_blank_cost_cents: dollarsToOptionalCents(formData.get("shirt_blank_cost")),
       shirt_shipping_cents: dollarsToOptionalCents(formData.get("shirt_shipping")),
-      dtf_source: String(formData.get("dtf_source") || "in_house_dtf"),
+      dtf_source: String(formData.get("dtf_source") || "auto_dtf"),
+      production_rush: Boolean(formData.get("production_rush")),
       dtf_cost_per_shirt_cents: dollarsToOptionalCents(
         formData.get("dtf_cost_per_shirt")
       ),
@@ -542,6 +544,15 @@ function renderCalculation(calculation) {
     blankUpgradeTotalCents;
   const finalAveragePerShirtCents = getFinalAveragePerShirtCents(totals);
   const safety = totals.pricing_safety || item.pricing_safety || {};
+  const isAutomaticProduction = safety.dtf_source_mode === "auto_dtf";
+  const productionHeading = isAutomaticProduction
+    ? "Recommended Production"
+    : "Selected Production";
+  const productionDetail = isAutomaticProduction
+    ? safety.dtf_recommendation_reason
+    : safety.dtf_recommendation_overridden
+      ? `Manual override. App recommendation: ${safety.dtf_recommendation_label}. ${safety.dtf_recommendation_reason}`
+      : `Manual selection matches the app recommendation. ${safety.dtf_recommendation_reason}`;
   const sizeUpgradeRows = (item.sizes || [])
     .filter((size) => Number(size.customer_blank_upgrade_total_cents) > 0)
     .map((size) =>
@@ -666,6 +677,11 @@ function renderCalculation(calculation) {
     : "";
 
   quoteSummaryContent.innerHTML = `
+    <section class="production-recommendation-card${safety.dtf_recommendation_overridden ? " is-overridden" : ""}">
+      <span>${escapeHtml(productionHeading)}</span>
+      <strong>${escapeHtml(safety.dtf_source_label || "DTF")}</strong>
+      <p>${escapeHtml(productionDetail || "Production method selected from the order quantity and print locations.")}</p>
+    </section>
     <section class="customer-price-card">
       <div class="customer-price-heading">
         <span>Base Tier / Starting Point</span>
@@ -904,8 +920,10 @@ function resetQuoteForm() {
   editingQuoteId = null;
   quoteForm?.reset();
   isSleeveSelected = false;
+  setSelectedBasePlacements(["full_front"]);
+  setFormValue("dtf_source", "auto_dtf");
+  setFormValue("dtf_cost_per_shirt", "");
   syncSleeveToggleUi();
-  syncPrintTypeUi();
   if (garmentBlocks) garmentBlocks.innerHTML = "";
   addGarmentBlock();
   closeSavePanel();
@@ -996,13 +1014,9 @@ async function editQuoteDraft(quoteId) {
     }
 
     const placements = item.placements || [];
-    setFormValue(
-      "base_placement",
-      placements.find((placement) => placement !== "sleeve") || "full_front"
-    );
+    setSelectedBasePlacements(placements);
     isSleeveSelected = placements.includes("sleeve");
     syncSleeveToggleUi();
-    syncPrintTypeUi();
 
     if (garmentBlocks) garmentBlocks.innerHTML = "";
     items.forEach((quoteItem) => addGarmentBlock(quoteItem));
@@ -1412,8 +1426,9 @@ quoteForm?.addEventListener("input", (event) => {
   const pricingFieldNames = new Set([
     "shirt_blank_id",
     "color",
-    "print_type",
-    "base_placement",
+    "base_placements",
+    "production_rush",
+    "dtf_source",
     "shirt_blank_cost",
     "shirt_shipping",
     "dtf_cost_per_shirt",
@@ -1502,10 +1517,9 @@ dtfSourceSelect?.addEventListener("change", async () => {
   const hadCalculation = Boolean(lastCalculation);
   const source = dtfSourceSelect.value;
 
-  if (Object.prototype.hasOwnProperty.call(DTF_SOURCE_DEFAULT_COSTS, source)) {
-    dtfCostPerShirtInput.value = DTF_SOURCE_DEFAULT_COSTS[source].toFixed(2);
-  } else {
-    dtfCostPerShirtInput.value = "";
+  dtfCostPerShirtInput.value = "";
+
+  if (source === "manual_custom") {
     dtfCostPerShirtInput.focus({ preventScroll: true });
   }
 
@@ -1518,11 +1532,6 @@ dtfSourceSelect?.addEventListener("change", async () => {
       // Error is shown inline.
     }
   }
-});
-
-printTypeSelect?.addEventListener("change", () => {
-  syncPrintTypeUi();
-  invalidateCalculation();
 });
 
 quoteForm?.addEventListener("submit", async (event) => {
@@ -1543,7 +1552,6 @@ quoteSearch?.addEventListener("input", () => {
 quoteStatusFilter?.addEventListener("change", loadQuotes);
 
 syncSleeveToggleUi();
-syncPrintTypeUi();
 updateMobileQuoteBar();
 setBusyState();
 loadBlanks().catch((error) => showQuoteError(error.message));

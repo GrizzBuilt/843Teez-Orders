@@ -14,7 +14,7 @@
     />
     <title>843 Teez Quote Builder</title>
     <link rel="stylesheet" href="/styles.css" />
-    <link rel="stylesheet" href="/quotes.css?v=20260703-1" />
+    <link rel="stylesheet" href="/quotes.css?v=20260918-1" />
   </head>
   <body class="quote-page">
     <header class="quote-topbar">
@@ -64,23 +64,20 @@
 
           <div class="quote-section">
             <h3>Print</h3>
+            <input type="hidden" id="print_type" name="print_type" value="DTF" />
 
-            <div class="quote-grid">
-              <label class="quote-field">
-                <span>Print Type</span>
-                <select id="print_type" name="print_type">
-                  <option value="DTF" selected>DTF</option>
-                  <option value="Screen Print">Screen Print</option>
-                </select>
+            <div class="print-placement-grid" aria-label="Print locations">
+              <label class="print-placement-card">
+                <input type="checkbox" name="base_placements" value="left_chest" />
+                <span>Left Chest</span>
               </label>
-
-              <label class="quote-field">
-                <span>Placement</span>
-                <select id="base_placement" name="base_placement">
-                  <option value="full_front" selected>Full Front</option>
-                  <option value="full_back">Full Back</option>
-                  <option value="left_chest">Left Chest</option>
-                </select>
+              <label class="print-placement-card">
+                <input type="checkbox" name="base_placements" value="full_front" checked />
+                <span>Full Front</span>
+              </label>
+              <label class="print-placement-card">
+                <input type="checkbox" name="base_placements" value="full_back" />
+                <span>Full Back</span>
               </label>
             </div>
 
@@ -92,6 +89,11 @@
             >
               <strong>Add Sleeve +$3/shirt</strong>
             </button>
+
+            <label class="rush-production-toggle">
+              <input type="checkbox" id="production_rush" name="production_rush" />
+              <span>No time to wait for outsourced transfers</span>
+            </label>
           </div>
 
           <div class="quote-section">
@@ -101,21 +103,6 @@
             </div>
 
             <div class="quote-grid pricing-safety-inputs">
-              <label class="quote-field" id="dtf-source-field">
-                <span>Print Source</span>
-                <select id="dtf_source" name="dtf_source">
-                  <option value="in_house_dtf" selected>In-house DTF</option>
-                  <option value="outsourced_dtf">Outsourced DTF</option>
-                  <option value="customer_supplied">Customer-supplied transfers</option>
-                  <option value="manual_custom">Manual custom cost</option>
-                </select>
-              </label>
-
-              <label class="quote-field" id="dtf-cost-field">
-                <span>DTF Cost / Shirt</span>
-                <input type="number" id="dtf_cost_per_shirt" name="dtf_cost_per_shirt" min="0" step="0.01" inputmode="decimal" value="3.00" />
-              </label>
-
               <label class="quote-field quote-field-wide">
                 <span>Manual Customer Price / Shirt <small>(optional)</small></span>
                 <input type="number" id="quoted_price_per_shirt" name="quoted_price_per_shirt" min="0" step="0.01" inputmode="decimal" placeholder="Use recommended price" />
@@ -124,13 +111,28 @@
 
             <div class="pricing-helper-notes">
               <p><strong>Protected pricing:</strong> targets at least 40% margin and $5 profit per shirt. In-house DTF targets at least 45% margin.</p>
-              <p><strong>In-house estimate:</strong> includes ink, film, powder, maintenance, waste, misprints, and reprints.</p>
-              <p><strong>Outsourced estimate:</strong> includes transfer cost and normal shipping spread across the order.</p>
+              <p><strong>Production:</strong> the app chooses in-house or outsourced DTF from the quantity and print locations.</p>
             </div>
 
             <details class="advanced-pricing" id="advanced-pricing">
               <summary>Advanced</summary>
               <div class="quote-grid pricing-safety-inputs">
+                <label class="quote-field" id="dtf-source-field">
+                  <span>Production Override</span>
+                  <select id="dtf_source" name="dtf_source">
+                    <option value="auto_dtf" selected>Auto — use recommendation</option>
+                    <option value="in_house_dtf">In-house DTF</option>
+                    <option value="outsourced_dtf">Outsourced DTF</option>
+                    <option value="customer_supplied">Customer-supplied transfers</option>
+                    <option value="manual_custom">Manual custom cost</option>
+                  </select>
+                </label>
+
+                <label class="quote-field" id="dtf-cost-field">
+                  <span>Custom DTF Cost / Shirt</span>
+                  <input type="number" id="dtf_cost_per_shirt" name="dtf_cost_per_shirt" min="0" step="0.01" inputmode="decimal" placeholder="Use method default" />
+                </label>
+
                 <label class="quote-field">
                   <span>Manual Shirt Cost Total</span>
                   <input type="number" id="shirt_blank_cost" name="shirt_blank_cost" min="0" step="0.01" inputmode="decimal" placeholder="Use database cost" />

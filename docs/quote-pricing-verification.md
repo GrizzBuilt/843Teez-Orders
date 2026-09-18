@@ -124,10 +124,11 @@ price is allowed, but `low_margin_warning` must be `true`.
 
 ## Recommended Price Workflow
 
-The normal quote screen keeps blank, size quantities, print/placement, DTF
-source, and the optional manual customer price visible. Shipping, packaging,
-setup/labor, manual landed costs, source comparison, placement rules, and debug
-data are behind Advanced or Show Details.
+The normal quote screen keeps blank, size quantities, print locations, and the
+optional manual customer price visible. DTF is the quote builder's production
+type. Shipping, packaging, setup/labor, production overrides, manual landed
+costs, source comparison, placement rules, and debug data are behind Advanced
+or Show Details.
 
 Validation examples for 10 shirts with no size adjustment:
 
@@ -158,6 +159,36 @@ Expected source comparison:
 Changing the selected source must update the actual
 `pricing_safety.dtf_print_cost_cents`, not only the comparison values. A custom
 per-shirt override must take precedence over the selected source default.
+
+## Automatic DTF Production Verification
+
+The quote builder defaults to `auto_dtf` and resolves that choice to the actual
+source saved with the quote. The normal screen shows the recommendation and a
+plain-language reason. Manual source selection remains available under
+Advanced.
+
+Expected automatic recommendations:
+
+| Quantity / placement | Recommendation |
+| --- | --- |
+| 1-9, any supported placement combination | In-house DTF |
+| 10-24, one left-chest placement | In-house DTF |
+| 10-24, a full front or full back | Outsourced DTF |
+| 10-24, two or more locations | Outsourced DTF |
+| 25+, any supported placement combination | Outsourced DTF |
+| Rush / no time to order transfers | In-house DTF |
+
+For 40 shirts with left chest and full back selected, confirm that the response
+contains:
+
+```text
+pricing_safety.dtf_source = outsourced_dtf
+pricing_safety.dtf_source_mode = auto_dtf
+pricing_safety.dtf_recommended_source = outsourced_dtf
+```
+
+Selecting a manual production override should preserve the app recommendation
+in the response and set `dtf_recommendation_overridden` when they differ.
 
 Growth-protection check for 50 outsourced-DTF shirts with $386.12 landed cost:
 

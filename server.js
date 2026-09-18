@@ -12,6 +12,7 @@ const express = require("express");
 const path = require("path");
 const fs = require("fs");
 const sqlite3 = require("sqlite3").verbose();
+const { recommendDtfProduction } = require("./lib/dtf-production");
 
 // =====================
 // App Config
@@ -1684,6 +1685,19 @@ function calculateQuotePricingSafety({
     shirt_shipping_cents: shirtShippingCents,
     dtf_source: dtfSource,
     dtf_source_label: isDtf ? DTF_PRINT_SOURCES[dtfSource].label : "Not applicable",
+    dtf_source_mode: String(safetyInput.dtf_source_mode || dtfSource),
+    dtf_recommended_source: String(
+      safetyInput.dtf_recommended_source || dtfSource
+    ),
+    dtf_recommendation_label: String(
+      safetyInput.dtf_recommendation_label ||
+        (isDtf ? DTF_PRINT_SOURCES[dtfSource].label : "Not applicable")
+    ),
+    dtf_recommendation_reason: String(
+      safetyInput.dtf_recommendation_reason || ""
+    ),
+    dtf_recommendation_overridden:
+      safetyInput.dtf_recommendation_overridden === true,
     dtf_cost_per_shirt_cents: dtfCostPerShirtCents,
     dtf_print_cost_cents: landedDtfPrintCostCents,
     internal_add_on_cost_cents: landedInternalAddOnCostCents,
@@ -2467,10 +2481,49 @@ async function calculateQuote(input) {
     throw error;
   }
 
-  const sharedSafety =
+  const requestedSharedSafety =
     input?.pricing_safety && typeof input.pricing_safety === "object"
       ? input.pricing_safety
       : {};
+  const allItemsUseDtf = itemInputs.every(
+    (item) => normalizePrintType(item.print_type) === "DTF"
+  );
+  const requestedDtfSourceMode = String(
+    requestedSharedSafety.dtf_source || "auto_dtf"
+  ).trim();
+  const recommendation = allItemsUseDtf
+    ? recommendDtfProduction({
+        quantity: combinedPricingQuantity,
+        placements: itemInputs.flatMap((item) =>
+          Array.isArray(item.placements) ? item.placements : []
+        ),
+        rush:
+          requestedSharedSafety.production_rush === true ||
+          requestedSharedSafety.production_rush === 1 ||
+          requestedSharedSafety.production_rush === "1",
+      })
+    : null;
+  const useAutomaticDtfSource =
+    allItemsUseDtf &&
+    (!normalizeDtfPrintSource(requestedDtfSourceMode) ||
+      requestedDtfSourceMode === "auto_dtf");
+  const resolvedDtfSource = useAutomaticDtfSource
+    ? recommendation.source
+    : requestedDtfSourceMode;
+  const sharedSafety = allItemsUseDtf
+    ? {
+        ...requestedSharedSafety,
+        dtf_source: resolvedDtfSource,
+        dtf_source_mode: useAutomaticDtfSource
+          ? "auto_dtf"
+          : requestedDtfSourceMode,
+        dtf_recommended_source: recommendation.source,
+        dtf_recommendation_label: recommendation.label,
+        dtf_recommendation_reason: recommendation.reason,
+        dtf_recommendation_overridden:
+          !useAutomaticDtfSource && resolvedDtfSource !== recommendation.source,
+      }
+    : requestedSharedSafety;
 
   if (
     itemInputs.length > 1 &&
